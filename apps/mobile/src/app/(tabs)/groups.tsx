@@ -20,11 +20,14 @@ import { useTallyData } from '@/lib/data';
 import { useWidthClass } from '@/lib/layout';
 import { useGroupSummaries } from '@/store/hooks';
 import { brand, space } from '@/theme';
+import { inviteCodeFrom } from '@/lib/invite';
+import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Filter = 'all' | 'owed' | 'owe' | 'settled';
 
 export default function GroupsScreen() {
-  const { data, isRefetching, refetch, error } = useTallyData();
+  const { data, refetch, error } = useTallyData();
+  const pull = usePullToRefresh(refetch);
   const summaries = useGroupSummaries();
   const [filter, setFilter] = useState<Filter>('all');
   const [code, setCode] = useState('');
@@ -67,8 +70,9 @@ export default function GroupsScreen() {
   );
 
   const join = () => {
-    if (!code.trim()) return;
-    router.push(`/invite/${code.trim()}`);
+    const token = inviteCodeFrom(code);
+    if (!token) return;
+    router.push(`/invite/${token}`);
     setCode('');
   };
 
@@ -171,7 +175,7 @@ export default function GroupsScreen() {
 
   if (!wide) {
     return (
-      <HeroScreen header={header} refreshing={isRefetching} onRefresh={() => void refetch()}>
+      <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
         {body}
       </HeroScreen>
     );
@@ -221,7 +225,7 @@ export default function GroupsScreen() {
   );
 
   return (
-    <HeroScreen header={wideHeader} fullWidth refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <HeroScreen header={wideHeader} fullWidth refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       {body}
     </HeroScreen>
   );

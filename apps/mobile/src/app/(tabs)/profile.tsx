@@ -10,6 +10,7 @@ import { CURRENCIES } from '@/lib/currencies';
 import { PAYID_CURRENCY, useRemovePayId, useSetPayId, useTallyData, useUpdateProfile } from '@/lib/data';
 import { supabase } from '@/lib/supabase';
 import { PRESS_DELAY, brand, space, useColors } from '@/theme';
+import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 /** A tappable settings row: label on the left, current value and chevron on the right. */
 function SettingRow({ label, value, onPress, danger }: { label: string; value?: string; onPress?: () => void; danger?: boolean }) {
@@ -49,7 +50,8 @@ export default function ProfileScreen() {
   const c = useColors();
   const myId = useMyId();
   const email = useMyEmail();
-  const { data, isRefetching, refetch } = useTallyData();
+  const { data, refetch } = useTallyData();
+  const pull = usePullToRefresh(refetch);
   const updateProfile = useUpdateProfile();
   const setPayId = useSetPayId();
   const removePayId = useRemovePayId();
@@ -146,7 +148,7 @@ export default function ProfileScreen() {
 
   const header = (
     <View style={{ alignItems: 'center', gap: space.sm }}>
-      <Avatar name={me?.name || email || '?'} size={88} color="rgba(124,196,255,0.25)" />
+      <Avatar name={me?.name || email || '?'} size={88} color={brand.tintOnDeep} />
       <Text variant="title" color={brand.onDeep} style={{ marginTop: space.sm }}>
         {me?.name ?? ''}
       </Text>
@@ -173,7 +175,7 @@ export default function ProfileScreen() {
   );
 
   return (
-    <HeroScreen header={header} refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       <View style={{ gap: space.md }}>
         <SectionTitle title="Account" />
         <Gutter>

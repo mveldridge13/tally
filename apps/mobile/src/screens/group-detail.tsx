@@ -12,6 +12,7 @@ import { sendInvite, type InviteChannel } from '@/lib/invite';
 import { PAYID_CURRENCY, useAddGuest, useDeleteGroup, useLeaveGroup, useNameOf, useTallyData } from '@/lib/data';
 import { useGroupSummary } from '@/store/hooks';
 import { PRESS_DELAY, balanceColor, brand, groupColor, radius, space, useColors } from '@/theme';
+import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 /**
  * Group details. Full screen as a route, or inside the right pane of a two-pane layout
@@ -19,7 +20,8 @@ import { PRESS_DELAY, balanceColor, brand, groupColor, radius, space, useColors 
  */
 export function GroupDetail({ id, embedded = false, onGone }: { id: string; embedded?: boolean; onGone?: () => void }) {
   const c = useColors();
-  const { data, isLoading, isRefetching, refetch } = useTallyData();
+  const { data, isLoading, refetch } = useTallyData();
+  const pull = usePullToRefresh(refetch);
   const summary = useGroupSummary(id);
   const name = useNameOf();
   const myId = useMyId();
@@ -225,7 +227,7 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   );
 
   return (
-    <HeroScreen variant={embedded ? 'card' : 'full'} header={header} refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <HeroScreen variant={embedded ? 'card' : 'full'} header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       {inviteError ? (
         <Gutter>
           <Notice>{inviteError}</Notice>

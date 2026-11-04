@@ -23,7 +23,7 @@ function formatDateTime(iso: string) {
 function Party({ who, role }: { who: string; role: string }) {
   return (
     <View style={{ alignItems: 'center', gap: space.sm, flex: 1 }}>
-      <Avatar name={who} size={56} color="rgba(124,196,255,0.25)" />
+      <Avatar name={who} size={56} color={brand.tintOnDeep} />
       <Text variant="label" color={brand.onDeep} numberOfLines={1}>
         {who}
       </Text>
@@ -40,7 +40,7 @@ function Party({ who, role }: { who: string; role: string }) {
  * (`embedded`: no back button; `onGone` runs instead of going back when it's deleted or undone).
  */
 export function PaymentDetail({ id, embedded = false, onGone }: { id: string; embedded?: boolean; onGone?: () => void }) {
-    const myId = useMyId();
+  const myId = useMyId();
   const { data, isLoading } = useTallyData();
   const name = useNameOf();
   const voidSettlement = useVoidSettlement();

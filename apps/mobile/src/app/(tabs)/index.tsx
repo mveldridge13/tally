@@ -25,6 +25,7 @@ import { firstName, greeting } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { useGroupSummaries } from '@/store/hooks';
 import { PRESS_DELAY, brand, radius, space, useColors } from '@/theme';
+import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 interface PendingPayment {
   groupId: string;
@@ -39,7 +40,8 @@ export default function HomeScreen() {
   const c = useColors();
   const myId = useMyId();
   const name = useNameOf();
-  const { data, isLoading, isRefetching, error, refetch } = useTallyData();
+  const { data, isLoading, error, refetch } = useTallyData();
+  const pull = usePullToRefresh(refetch);
   const summaries = useGroupSummaries();
   // Unfolded (expanded width): one full-width scrolling page, with the summary spread across the width.
   const wide = useWidthClass() === 'expanded';
@@ -116,7 +118,7 @@ export default function HomeScreen() {
         title={firstName(me) || 'there'}
         right={
           <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => router.push('/profile')} hitSlop={8}>
-            <Avatar name={me || '?'} size={44} color="rgba(124,196,255,0.25)" />
+            <Avatar name={me || '?'} size={44} color={brand.tintOnDeep} />
           </Pressable>
         }
       />
@@ -359,7 +361,7 @@ export default function HomeScreen() {
       </>
     );
     return (
-      <HeroScreen header={wideHeader} fullWidth refreshing={isRefetching} onRefresh={() => void refetch()}>
+      <HeroScreen header={wideHeader} fullWidth refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
         {errorSection}
         {startSection}
         {settleSection}
@@ -371,7 +373,7 @@ export default function HomeScreen() {
 
   // ─── Folded: navy header and one scrolling column ────────────────────────
   return (
-    <HeroScreen header={header} refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       {errorSection}
       {startSection}
       {settleSection}

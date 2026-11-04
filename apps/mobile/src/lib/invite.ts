@@ -7,7 +7,24 @@ export function inviteMessage(groupName: string, token: string, guestName?: stri
   const intro = guestName
     ? `Join "${groupName}" on Tally as ${guestName}. Everything already recorded for you comes with you.`
     : `Join "${groupName}" on Tally so we can split expenses.`;
-  return `${intro}\n\nOpen: tally://invite/${token}\n\nOr in Tally go to Groups → Join a group and paste this code:\n${token}`;
+  return `${intro}\n\nTap to join: ${inviteLink(token)}\n\nOr in Tally go to Groups → Join a group and paste this code:\n${token}`;
+}
+
+/**
+ * Web address for an invite. Messaging and email apps only make https links tappable, so the
+ * invite points at a small page (GitHub Pages, docs/invite) that opens tally://invite/<token>
+ * and shows the code as a fallback.
+ */
+export const INVITE_PAGE = 'https://mveldridge13.github.io/tally/invite/';
+export function inviteLink(token: string) {
+  return `${INVITE_PAGE}?code=${encodeURIComponent(token)}`;
+}
+
+/** The invite code from whatever was pasted: the code itself, the web link, or a tally:// link. */
+export function inviteCodeFrom(text: string): string {
+  const clean = text.trim();
+  const match = clean.match(/[?&]code=([^&#\s]+)/) ?? clean.match(/invite\/([^/?#\s]+)/);
+  return match ? decodeURIComponent(match[1]!) : clean;
 }
 
 export type InviteChannel = 'text' | 'email' | 'share';

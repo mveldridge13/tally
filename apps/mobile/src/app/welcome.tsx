@@ -7,6 +7,7 @@ import { HeroGlow, Wordmark } from '@/components/brand';
 import { Button, LinkButton, Text } from '@/components/ui';
 import { savePendingInvite, usePendingInvite } from '@/lib/pending-invite';
 import { brand, radius, space } from '@/theme';
+import { inviteCodeFrom } from '@/lib/invite';
 
 const onDeepMuted = brand.onDeepMuted;
 
@@ -62,7 +63,7 @@ function PreviewCard() {
               width: 32,
               height: 32,
               borderRadius: 16,
-              backgroundColor: 'rgba(124,196,255,0.18)',
+              backgroundColor: brand.tintOnDeep,
               alignItems: 'center',
               justifyContent: 'center',
             }}>
@@ -92,7 +93,7 @@ export default function WelcomeScreen() {
   // Save the code, then sign up; after sign-up Tally joins the group automatically.
   const applyCode = () => {
     if (!code.trim()) return;
-    savePendingInvite(code);
+    savePendingInvite(inviteCodeFrom(code));
     router.push('/sign-up');
   };
   const insets = useSafeAreaInsets();
@@ -127,7 +128,7 @@ export default function WelcomeScreen() {
 
         <View style={{ gap: space.md }}>
           {pending ? (
-            <View style={{ backgroundColor: 'rgba(124,196,255,0.14)', borderRadius: radius.md, padding: space.md }}>
+            <View style={{ backgroundColor: brand.tintOnDeep, borderRadius: radius.md, padding: space.md }}>
               <Text variant="label" color={brand.onDeep}>
                 Invite saved. Create an account or log in and you’ll be added to the group.
               </Text>

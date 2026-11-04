@@ -5,9 +5,9 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const NAVY = '#14284B';
-const SKY = '#7CC4FF';
-const SLASH = '#F2555A';
+const NAVY = '#4E6E5D'; // Sage: background of the icon and splash
+const SKY = '#D3E5DA'; // Pale sage: the four strokes
+const SLASH = '#F2555A'; // Red: the slash (part of the logo in every palette)
 
 const STROKES = [
   { d: 'M29 21.5 C 27.6 40, 30.2 58, 28.6 79', w: 7.4 },

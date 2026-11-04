@@ -32,7 +32,7 @@ function formatDateTime(iso: string) {
  */
 export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; embedded?: boolean; onGone?: () => void }) {
   const c = useColors();
-    const myId = useMyId();
+  const myId = useMyId();
   const { data, isLoading } = useTallyData();
   const name = useNameOf();
   const history = useExpenseHistory(id);

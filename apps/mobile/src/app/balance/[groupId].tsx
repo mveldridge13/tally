@@ -107,7 +107,7 @@ export default function BalanceBreakdownScreen() {
         title={otherId ? `You and ${they}` : 'Your balance'}
         leading={
           otherId ? (
-            <Avatar name={they} size={44} color="rgba(124,196,255,0.25)" />
+            <Avatar name={they} size={44} color={brand.tintOnDeep} />
           ) : (
             <Avatar name={group.name} color={groupColor(group.id)} square size={44} />
           )

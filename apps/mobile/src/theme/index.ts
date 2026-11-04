@@ -1,63 +1,67 @@
 import { useColorScheme } from 'react-native';
 
 /**
- * Tally design tokens: Navy + Sky Blue.
+ * Tally design tokens: Sage & White.
  * Every colour, space and type size in the app comes from here.
- * Owed (green) and owe (orange) colours are reserved for money direction only,
- * so they never compete with the blue brand colours.
+ * Money colours are reserved for money direction only: green = owed to you, muted red = you owe.
+ * Readability: white on the sage header is 5.7:1, white on the button colour 7.3:1, and the
+ * money and secondary-text colours all pass WCAG AA (4.5:1) on their backgrounds.
  */
 
 /** Brand constants, identical in light and dark mode. Change the palette here. */
 export const brand = {
-  /** Navy: primary brand colour, used for hero backgrounds and primary buttons. */
-  deep: '#14284B',
-  deeper: '#0E1D38',
-  deepest: '#081226',
-  /** Sky blue: accent, used for highlights and buttons on navy. */
-  accent: '#7CC4FF',
-  accentSoft: '#E3F1FF',
-  /** Red slash in the Tally mark. Logo only; never used for money states. */
+  /** Sage: primary brand colour, used for header backgrounds and the logo. */
+  deep: '#4E6E5D',
+  /** Deep sage: primary buttons (stronger contrast with white text than the header colour). */
+  deeper: '#3F5D4E',
+  deepest: '#2F473B',
+  /** Pale sage: accent, used for highlights and the main action on the header. */
+  accent: '#D3E5DA',
+  accentSoft: '#E8F1EB',
+  /** Red slash in the Tally mark: part of the logo in every palette. Logo only; never used for money states. */
   slash: '#F2555A',
   onDeep: '#FFFFFF',
-  onAccent: '#081226',
-  /** "You owe" orange on navy (the light-mode owe colour is too dark there). */
-  oweOnDeep: '#FDBA74',
-  /** Secondary text on navy. */
-  onDeepMuted: 'rgba(255,255,255,0.7)',
+  onAccent: '#26302B',
+  /** "You owe" on the sage header (the light-mode owe colour is too dark there). */
+  oweOnDeep: '#FFC7BE',
+  /** Secondary text on the header. */
+  onDeepMuted: 'rgba(255,255,255,0.82)',
+  /** Translucent highlight on the header: avatars, the selected rail tab, notes. */
+  tintOnDeep: 'rgba(211,229,218,0.24)',
 } as const;
 
 const palette = {
   light: {
-    bg: '#F4F7FC',
-    surface: '#FFFFFF',
-    surfaceAlt: '#E8EFF9',
-    border: '#D5E0F0',
-    text: '#0E1B33',
-    textMuted: '#5A6B85',
-    primary: brand.deep,
+    bg: '#FFFFFF',
+    surface: '#F7FAF8',
+    surfaceAlt: '#E8F1EB',
+    border: '#E2EAE5',
+    text: '#26302B',
+    textMuted: '#66736C',
+    primary: brand.deeper,
     onPrimary: brand.onDeep,
     accent: brand.accent,
     onAccent: brand.onAccent,
-    focus: '#2F7DE1',
-    owed: '#15803D',
-    owe: '#C2410C',
-    settled: '#6B7A90',
+    focus: '#3F5D4E',
+    owed: '#1A7A50',
+    owe: '#B8433A',
+    settled: '#7A857F',
   },
   dark: {
-    bg: '#0A1222',
-    surface: '#111C31',
-    surfaceAlt: '#18263F',
-    border: '#22334F',
-    text: '#EAF1FB',
-    textMuted: '#94A6C2',
-    primary: brand.accent,
-    onPrimary: brand.onAccent,
+    bg: '#111714',
+    surface: '#18201C',
+    surfaceAlt: '#212C26',
+    border: '#2B3832',
+    text: '#EAF1EC',
+    textMuted: '#9CAEA4',
+    primary: '#A9CDB8',
+    onPrimary: '#14201A',
     accent: brand.accent,
     onAccent: brand.onAccent,
-    focus: brand.accent,
-    owed: '#4ADE80',
-    owe: '#FDBA74',
-    settled: '#94A6C2',
+    focus: '#A9CDB8',
+    owed: '#6FD39C',
+    owe: '#FF9C8F',
+    settled: '#9CAEA4',
   },
 } as const;
 

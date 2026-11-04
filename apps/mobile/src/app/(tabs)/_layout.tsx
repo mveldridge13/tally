@@ -28,7 +28,7 @@ function TabButton(allProps: TabTriggerSlotProps & { icon: IconName; label: stri
   void ref;
   const c = useColors();
   // On the navy rail: sky-blue selected pill, light icons. On the light bottom bar: the usual surface colours.
-  const pill = onNavy ? 'rgba(124,196,255,0.18)' : c.surfaceAlt;
+  const pill = onNavy ? brand.tintOnDeep : c.surfaceAlt;
   const iconOn = onNavy ? brand.accent : c.primary;
   const iconOff = onNavy ? brand.onDeepMuted : c.textMuted;
   const textOn = onNavy ? brand.onDeep : c.text;

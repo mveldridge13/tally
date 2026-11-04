@@ -13,7 +13,7 @@ import { brand, radius, space, useColors } from '@/theme';
 function Party({ who, role }: { who: string; role: string }) {
   return (
     <View style={{ alignItems: 'center', gap: space.sm, flex: 1 }}>
-      <Avatar name={who} size={52} color="rgba(124,196,255,0.25)" />
+      <Avatar name={who} size={52} color={brand.tintOnDeep} />
       <Text variant="label" color={brand.onDeep} numberOfLines={1}>
         {who}
       </Text>

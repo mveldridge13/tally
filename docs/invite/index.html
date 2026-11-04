@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Join on Tally</title>
+<meta property="og:title" content="You're invited to a group on Tally">
+<meta property="og:description" content="Split simply. Settle easily. Tap to join the group.">
+<style>
+  :root {
+    --sage: #4E6E5D; --sage-deep: #3F5D4E; --pale: #D3E5DA; --slash: #F2555A;
+    --bg: #FFFFFF; --surface: #F7FAF8; --border: #E2EAE5; --text: #26302B; --muted: #66736C;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111714; --surface: #18201C; --border: #2B3832; --text: #EAF1EC; --muted: #9CAEA4; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--sage); color: #fff; padding: 48px 16px 40px; text-align: center; }
+  header svg { width: 64px; height: 64px; }
+  header h1 { margin: 12px 0 4px; font-size: 28px; letter-spacing: -0.3px; }
+  header p { margin: 0; opacity: .82; }
+  main { max-width: 440px; margin: -20px auto 0; padding: 0 16px 40px; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 24px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.06); }
+  .btn { display: block; width: 100%; text-align: center; text-decoration: none; border: 0; cursor: pointer;
+    background: var(--sage-deep); color: #fff; font: 600 17px/1 inherit; font-family: inherit;
+    padding: 17px; border-radius: 14px; }
+  .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); margin-top: 10px; }
+  .label { font-size: 13px; color: var(--muted); margin: 24px 0 6px; }
+  code { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; font-size: 15px; word-break: break-all; user-select: all; }
+  .help { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 20px 0 0; }
+  .missing { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 64 64" aria-hidden="true" fill="none" stroke-linecap="round">
+    <g stroke="#D3E5DA" stroke-width="4.5"><path d="M18 16v32"/><path d="M27 15v33"/><path d="M36 16v32"/><path d="M45 15v33"/></g>
+    <path d="M12 42 L52 22" stroke="#F2555A" stroke-width="5"/>
+  </svg>
+  <h1>You're invited</h1>
+  <p>Join the group on Tally to split expenses.</p>
+</header>
+<main>
+  <div class="card" id="card">
+    <a class="btn" id="open" href="#">Open in Tally</a>
+    <button class="btn secondary" id="copy" type="button">Copy invite code</button>
+    <div class="label">Invite code</div>
+    <code id="code"></code>
+    <p class="help">Didn't open? In Tally, go to <strong>Groups → Join a group</strong> and paste the code.
+      Don't have Tally yet? Ask the person who invited you for the app, then come back and tap <strong>Open in Tally</strong>.
+      Your invite is kept through sign-up.</p>
+  </div>
+</main>
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var code = (params.get('code') || '').trim();
+    var card = document.getElementById('card');
+    if (!/^[A-Za-z0-9_-]{6,128}$/.test(code)) {
+      card.innerHTML = '<p class="missing">This invite link is incomplete. Ask the person who invited you to send it again.</p>';
+      return;
+    }
+    var path = 'invite/' + encodeURIComponent(code);
+    var isAndroid = /Android/i.test(navigator.userAgent);
+    // If Tally isn't installed, Android comes back to this page (marked so it doesn't loop) instead of the Play Store.
+    var here = location.origin + location.pathname + '?code=' + encodeURIComponent(code) + '&tried=1';
+    var appUrl = isAndroid
+      ? 'intent://' + path + '#Intent;scheme=tally;package=app.tally.mobile;S.browser_fallback_url=' + encodeURIComponent(here) + ';end'
+      : 'tally://' + path;
+    document.getElementById('code').textContent = code;
+    var open = document.getElementById('open');
+    open.href = appUrl;
+    var copy = document.getElementById('copy');
+    copy.addEventListener('click', function () {
+      var done = function () { copy.textContent = 'Copied'; setTimeout(function () { copy.textContent = 'Copy invite code'; }, 2000); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code).then(done, function () {});
+    });
+    // Try the app straight away; the page stays as a fallback if it isn't installed.
+    if (!params.get('tried')) location.href = appUrl;
+  })();
+</script>
+</body>
+</html>

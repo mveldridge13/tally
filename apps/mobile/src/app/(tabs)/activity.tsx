@@ -12,12 +12,14 @@ import { dayLabel } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { useActivity, type ActivityItem } from '@/store/hooks';
 import { brand, space } from '@/theme';
+import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Kind = 'all' | 'expenses' | 'payments' | 'mine';
 
 export default function ActivityScreen() {
   const myId = useMyId();
-  const { data, isRefetching, refetch, error } = useTallyData();
+  const { data, refetch, error } = useTallyData();
+  const pull = usePullToRefresh(refetch);
   const all = useActivity();
   const [kind, setKind] = useState<Kind>('all');
   const [groupId, setGroupId] = useState<string>('all');
@@ -180,7 +182,7 @@ export default function ActivityScreen() {
 
   if (!wide) {
     return (
-      <HeroScreen header={header} refreshing={isRefetching} onRefresh={() => void refetch()}>
+      <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
         {body}
       </HeroScreen>
     );
@@ -230,7 +232,7 @@ export default function ActivityScreen() {
   );
 
   return (
-    <HeroScreen header={wideHeader} fullWidth refreshing={isRefetching} onRefresh={() => void refetch()}>
+    <HeroScreen header={wideHeader} fullWidth refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
       {body}
     </HeroScreen>
   );
