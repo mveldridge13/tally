@@ -460,6 +460,36 @@ export function useAddGuest() {
   });
 }
 
+/** Someone you are, or were, in a group with. They can be added to any of your groups without an invite. */
+export interface SplitPartner {
+  id: string;
+  name: string;
+  sharedGroups: number;
+}
+
+/** People you split with, most recent first. Refreshes whenever the rest of the data does. */
+export function useSplitPartners() {
+  const myId = useMyId();
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'partners', myId],
+    queryFn: async (): Promise<SplitPartner[]> => {
+      const { data, error } = await supabase.rpc('split_partners');
+      if (error) throw error;
+      return data.map((p) => ({ id: p.user_id, name: p.name, sharedGroups: p.shared_groups }));
+    },
+    enabled: !!myId,
+  });
+  return { ...query, data: query.data ?? [] };
+}
+
+/** Add people you split with to a group, all at once. */
+export function useAddMembers() {
+  return useInvalidating(async (input: { groupId: string; userIds: string[] }) => {
+    const { error } = await supabase.rpc('add_members', { p_group_id: input.groupId, p_user_ids: input.userIds });
+    if (error) throw error;
+  });
+}
+
 /** Save or replace your PayID. The value must already be normalised (see normalisePayId). AUD profiles only. */
 export function useSetPayId() {
   return useInvalidating(async (input: { type: PayIdType; value: string; accountName?: string }) => {

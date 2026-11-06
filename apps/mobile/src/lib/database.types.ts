@@ -509,6 +509,7 @@ export type Database = {
     Functions: {
       accept_invite: { Args: { p_token: string }; Returns: string };
       add_guest: { Args: { p_group_id: string; p_name: string }; Returns: string };
+      add_members: { Args: { p_group_id: string; p_user_ids: string[] }; Returns: undefined };
       correct_settlement: {
         Args: { p_amount_cents: number; p_note?: string; p_occurred_at?: string; p_settlement_id: string };
         Returns: string;
@@ -577,6 +578,10 @@ export type Database = {
       require_user: { Args: Record<PropertyKey, never>; Returns: string };
       set_payid: { Args: { p_account_name?: string; p_type: string; p_value: string }; Returns: undefined };
       shares_group_with: { Args: { p_user_id: string }; Returns: boolean };
+      split_partners: {
+        Args: Record<PropertyKey, never>;
+        Returns: { last_shared_at: string; name: string; shared_groups: number; user_id: string }[];
+      };
       transfer_ownership: { Args: { p_group_id: string; p_new_owner_id: string }; Returns: undefined };
       update_expense: {
         Args: {

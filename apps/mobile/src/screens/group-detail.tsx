@@ -6,10 +6,20 @@ import { Alert, Pressable, View } from 'react-native';
 import { ActivityList } from '@/components/activity-list';
 import { Gutter, HeroNav, HeroScreen, onDeepMuted, oweOnDeep, QuickAction, SectionTitle, TotalPill } from '@/components/dashboard';
 import { ContactNameField, type ContactReach } from '@/components/contact-name-field';
+import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { sendInvite, type InviteChannel } from '@/lib/invite';
-import { PAYID_CURRENCY, useAddGuest, useDeleteGroup, useLeaveGroup, useNameOf, useTallyData } from '@/lib/data';
+import {
+  PAYID_CURRENCY,
+  useAddGuest,
+  useAddMembers,
+  useDeleteGroup,
+  useLeaveGroup,
+  useNameOf,
+  useSplitPartners,
+  useTallyData,
+} from '@/lib/data';
 import { useGroupSummary } from '@/store/hooks';
 import { PRESS_DELAY, balanceColor, brand, groupColor, radius, space, useColors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
@@ -31,6 +41,9 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   // The picked contact's number and email: used once to address the invite, never saved.
   const [guestReach, setGuestReach] = useState<ContactReach | null>(null);
   const addGuest = useAddGuest();
+  const addMembers = useAddMembers();
+  const { data: partners } = useSplitPartners();
+  const picked = useSelection();
   const deleteGroup = useDeleteGroup();
   const leaveGroup = useLeaveGroup();
 
@@ -98,6 +111,13 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
       buttons,
     );
   }
+  // People you split with elsewhere who aren't in this group yet.
+  const addable = partners.filter((p) => !group.memberIds.includes(p.id));
+  const pickedHere = [...picked.selected].filter((uid) => addable.some((p) => p.id === uid));
+  const addPicked = () => {
+    if (pickedHere.length) addMembers.mutate({ groupId: group.id, userIds: pickedHere }, { onSuccess: picked.clear });
+  };
+
   const people = `${group.memberIds.length} ${group.memberIds.length === 1 ? 'person' : 'people'}`;
 
   function confirmDelete() {
@@ -366,6 +386,25 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
             <Text variant="caption" muted>
               Tap someone to see every expense and payment between you{isOwner ? ', or to make them owner or remove them' : ''}.
             </Text>
+          ) : null}
+          {addable.length > 0 ? (
+            <View style={{ gap: space.sm, marginTop: space.sm }}>
+              <View style={{ gap: 2 }}>
+                <Text variant="heading">People you split with</Text>
+                <Text variant="caption" muted>
+                  They’ve been in a group with you before, so you can add them straight away. No invite needed.
+                </Text>
+              </View>
+              <SplitPartnerPicker partners={addable} selected={picked.selected} onToggle={picked.toggle} />
+              {pickedHere.length > 0 ? (
+                <Button
+                  label={`Add ${pickedHere.length === 1 ? (addable.find((p) => p.id === pickedHere[0])?.name ?? '1 person') : `${pickedHere.length} people`} to the group`}
+                  onPress={addPicked}
+                  loading={addMembers.isPending}
+                />
+              ) : null}
+              {addMembers.isError ? <Notice>{addMembers.error.message}</Notice> : null}
+            </View>
           ) : null}
           <Card style={{ gap: space.md }}>
             <View style={{ gap: 2 }}>

@@ -1,12 +1,13 @@
 import { createGroupSchema } from '@tally/shared';
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, TextInput, View, type TextInputInstance } from 'react-native';
+import { Alert, Pressable, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { Gutter, HeroNav, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
+import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Button, Card, Notice, Text } from '@/components/ui';
-import { CURRENCIES, type Currency } from '@/lib/currencies';
-import { useCreateGroup, useTallyData } from '@/lib/data';
+import { CURRENCIES, isSupportedCurrency, type Currency } from '@/lib/currencies';
+import { useAddMembers, useCreateGroup, useSplitPartners, useTallyData } from '@/lib/data';
 import { useAfterTransition } from '@/lib/transitions';
 import { brand, radius, space, useColors } from '@/theme';
 
@@ -23,7 +24,18 @@ const CURRENCY_INFO: Record<Currency, { symbol: string; name: string }> = {
 
 const SUGGESTIONS = ['Holiday', 'Flatmates', 'Dinner club', 'Road trip', 'Household', 'Weekend away'];
 
-function CurrencyCard({ code, selected, onPress }: { code: Currency; selected: boolean; onPress: () => void }) {
+function CurrencyCard({
+  code,
+  selected,
+  onPress,
+  wide = false,
+}: {
+  code: Currency;
+  selected: boolean;
+  onPress: () => void;
+  /** Full width, for the collapsed view that only shows the chosen currency. */
+  wide?: boolean;
+}) {
   const c = useColors();
   const info = CURRENCY_INFO[code];
   return (
@@ -33,7 +45,7 @@ function CurrencyCard({ code, selected, onPress }: { code: Currency; selected: b
       accessibilityLabel={`${info.name}, ${code}`}
       onPress={onPress}
       style={{
-        width: '48%',
+        width: wide ? '100%' : '48%',
         flexDirection: 'row',
         alignItems: 'center',
         gap: space.md,
@@ -76,8 +88,14 @@ export default function NewGroupScreen() {
   const c = useColors();
   const { data } = useTallyData();
   const createGroup = useCreateGroup();
+  const addMembers = useAddMembers();
+  const { data: partners } = useSplitPartners();
+  const people = useSelection();
   const [name, setName] = useState('');
-  const [currency, setCurrency] = useState<string>(data.me?.currency ?? 'USD');
+  const myCurrency = data.me?.currency;
+  const [currency, setCurrency] = useState<Currency>(isSupportedCurrency(myCurrency) ? myCurrency : 'USD');
+  // Most groups use your usual currency, so the full list stays hidden until asked for.
+  const [pickingCurrency, setPickingCurrency] = useState(false);
 
   // Open the keyboard once the form has slid up, not during the animation.
   const nameRef = useRef<TextInputInstance>(null);
@@ -89,11 +107,24 @@ export default function NewGroupScreen() {
   // Your default currency first, then the rest in the usual order.
   const currencies = [...CURRENCIES].sort((a, b) => Number(b === data.me?.currency) - Number(a === data.me?.currency));
 
-  function create() {
-    if (!parsed.success) return;
-    createGroup.mutate(parsed.data, {
-      onSuccess: (group) => router.replace(`/group/${group.id}`),
-    });
+  async function create() {
+    if (!parsed.success || createGroup.isPending || addMembers.isPending) return;
+    let group;
+    try {
+      group = await createGroup.mutateAsync(parsed.data);
+    } catch {
+      return; // shown below the form
+    }
+    const userIds = [...people.selected];
+    if (userIds.length) {
+      try {
+        await addMembers.mutateAsync({ groupId: group.id, userIds });
+      } catch (e) {
+        // The group exists either way; open it so they can add people from there.
+        Alert.alert('Group created, but nobody was added', e instanceof Error ? e.message : 'Please try adding them again from the group.');
+      }
+    }
+    router.replace(`/group/${group.id}`);
   }
 
   const header = (
@@ -184,20 +215,48 @@ export default function NewGroupScreen() {
         </View>
       ) : null}
 
+      {partners.length > 0 ? (
+        <View style={{ gap: space.md }}>
+          <SectionTitle title="People you split with" />
+          <Gutter>
+            <SplitPartnerPicker partners={partners} selected={people.selected} onToggle={people.toggle} />
+            <Text variant="caption" muted>
+              Tick anyone to add them straight away. They’ve been in a group with you before, so no invite is needed.
+            </Text>
+          </Gutter>
+        </View>
+      ) : null}
+
       <View style={{ gap: space.md }}>
-        <SectionTitle title="Currency" />
+        <SectionTitle
+          title="Currency"
+          action={pickingCurrency ? 'Done' : 'Change'}
+          onAction={() => setPickingCurrency((v) => !v)}
+        />
         <Gutter>
-          <View
-            style={{
-              flexDirection: 'row',
-              flexWrap: 'wrap',
-              justifyContent: 'space-between',
-              rowGap: space.sm,
-            }}>
-            {currencies.map((code) => (
-              <CurrencyCard key={code} code={code} selected={currency === code} onPress={() => setCurrency(code)} />
-            ))}
-          </View>
+          {pickingCurrency ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                justifyContent: 'space-between',
+                rowGap: space.sm,
+              }}>
+              {currencies.map((code) => (
+                <CurrencyCard
+                  key={code}
+                  code={code}
+                  selected={currency === code}
+                  onPress={() => {
+                    setCurrency(code);
+                    setPickingCurrency(false);
+                  }}
+                />
+              ))}
+            </View>
+          ) : (
+            <CurrencyCard code={currency} selected wide onPress={() => setPickingCurrency(true)} />
+          )}
           <Text variant="caption" muted>
             Every expense in this group uses this currency. It can’t be changed later.
           </Text>
@@ -213,14 +272,23 @@ export default function NewGroupScreen() {
           }}>
           <Text style={{ fontSize: 20 }}>👥</Text>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="heading">Next: invite people</Text>
+            <Text variant="heading">{partners.length > 0 ? 'Anyone else? Invite them next' : 'Next: invite people'}</Text>
             <Text variant="caption" muted>
-              You’ll be the owner. After creating the group, tap Invite people to share a code with friends.
+              You’ll be the owner. After creating the group, tap Invite to share a code with {partners.length > 0 ? 'anyone new' : 'friends'}.
             </Text>
           </View>
         </Card>
         {createGroup.isError ? <Notice>{createGroup.error.message}</Notice> : null}
-        <Button label="Create group" onPress={create} disabled={!parsed.success} loading={createGroup.isPending} />
+        <Button
+          label={
+            people.selected.size > 0
+              ? `Create group with ${people.selected.size} ${people.selected.size === 1 ? 'person' : 'people'}`
+              : 'Create group'
+          }
+          onPress={create}
+          disabled={!parsed.success}
+          loading={createGroup.isPending || addMembers.isPending}
+        />
       </Gutter>
     </HeroScreen>
   );
