@@ -10,9 +10,10 @@ import {
 } from '@tally/shared';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View, type TextInputInstance } from 'react-native';
+import { Pressable, TextInput, View, type TextInputInstance } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
+import { Gutter, HeroIconButton, HeroNav, HeroScreen, onDeepMuted } from '@/components/dashboard';
+import { GroupIcon, Sheet } from '@/components/friendly';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useCreateExpense, useNameOf, useTallyData, useUpdateExpense, type Expense } from '@/lib/data';
@@ -88,33 +89,6 @@ function PersonPill({ label, selected, onPress }: { label: string; selected: boo
       }}>
       <Avatar name={label} size={30} color={selected ? c.focus : undefined} />
       <Text variant="label">{label}</Text>
-    </Pressable>
-  );
-}
-
-/** Group picker card with the group's colour. */
-function GroupPill({ name, id, selected, onPress }: { name: string; id: string; selected: boolean; onPress: () => void }) {
-  const c = useColors();
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: space.sm,
-        padding: space.sm,
-        paddingRight: space.lg,
-        borderRadius: radius.md,
-        borderWidth: selected ? 2 : 1,
-        borderColor: selected ? c.focus : c.border,
-        backgroundColor: c.surface,
-      }}>
-      <Avatar name={name} size={32} color={groupColor(id)} square />
-      <Text variant="label" numberOfLines={1}>
-        {name}
-      </Text>
     </Pressable>
   );
 }
@@ -228,6 +202,7 @@ export default function ExpenseFormScreen() {
   const [method, setMethod] = useState<SplitMethod>(editing?.method ?? 'equal');
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
+  const [sheet, setSheet] = useState<'split' | 'group' | null>(null);
 
   // Open the keypad once the form has slid up, not during the animation.
   const amountRef = useRef<TextInputInstance>(null);
@@ -350,80 +325,97 @@ export default function ExpenseFormScreen() {
     else createExpense.mutate({ ...input, groupId: group.id }, { onSuccess: () => router.back() });
   }
 
-  const summary = preview.ok
-    ? method === 'equal'
-      ? `Split ${participantIds.length} ${participantIds.length === 1 ? 'way' : 'ways'} · about ${formatMoney(Math.floor(amount / participantIds.length), group!.currency)} each`
-      : `Split between ${participantIds.length} ${participantIds.length === 1 ? 'person' : 'people'}`
-    : null;
+  const payerLabel = payerId === myId ? 'you' : name(payerId);
+  const n = participantIds.length;
+  const methodWords: Record<SplitMethod, string> = {
+    equal: 'equally',
+    exact: 'by amounts',
+    percentage: 'by percentage',
+    shares: 'by shares',
+  };
+  const splitLine =
+    method === 'equal' && preview.ok && group && n > 0
+      ? `Split equally between ${n} · ${formatMoney(Math.floor(amount / n), group.currency)} each`
+      : `Split ${methodWords[method]} between ${n} ${n === 1 ? 'person' : 'people'}`;
+  // Only flag split problems here; a missing amount or description is obvious on the form.
+  const splitProblem = amountText && Number.isFinite(amount) && amount > 0 && !preview.ok ? (remaining ?? preview.error) : null;
+  const canPickGroup = !isEdit && !params.groupId && groups.length > 1;
 
   const header = (
     <>
-      <HeroNav mode="close" eyebrow={group ? group.name : 'Choose a group'} title={title} />
-
-      {/* Big amount entry */}
-      <View style={{ alignItems: 'center', marginTop: space.xl, gap: space.xs }}>
-        <Text variant="label" color={onDeepMuted}>
-          Amount{group ? ` in ${group.currency}` : ''}
-        </Text>
-        <View
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 }}>
+        <HeroIconButton icon="close" />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={canPickGroup ? `Group: ${group?.name ?? 'none'}. Change group` : `Group: ${group?.name ?? 'none'}`}
+          disabled={!canPickGroup}
+          onPress={() => setSheet('group')}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'center',
+            gap: space.sm,
+            paddingVertical: 6,
+            paddingLeft: 6,
+            paddingRight: space.md,
+            borderRadius: radius.pill,
+            backgroundColor: 'rgba(255,255,255,0.1)',
           }}>
-          <Text
-            style={{
-              fontSize: 40,
-              fontWeight: '700',
-              color: onDeepMuted,
-              marginRight: space.xs,
-            }}>
-            {group ? currencySymbol(group.currency) : ''}
+          {group ? <GroupIcon group={group} size={26} /> : null}
+          <Text variant="label" color={brand.onDeep} numberOfLines={1} style={{ maxWidth: 180 }}>
+            {group ? group.name : 'Choose a group'}
+            {canPickGroup ? '  ▾' : ''}
           </Text>
-          <TextInput
-            value={amountText}
-            onChangeText={setAmountText}
-            placeholder="0.00"
-            placeholderTextColor="rgba(255,255,255,0.35)"
-            ref={amountRef}
-            keyboardType="decimal-pad"
-            selectionColor={brand.accent}
-            cursorColor={brand.accent}
-            accessibilityLabel="Amount"
-            style={{
-              fontSize: 52,
-              fontWeight: '800',
-              letterSpacing: -1,
-              color: brand.onDeep,
-              minWidth: 120,
-              textAlign: 'center',
-              padding: 0,
-              fontVariant: ['tabular-nums'],
-            }}
-          />
-        </View>
+        </Pressable>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Big amount entry */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: space.xxl }}>
+        <Text style={{ fontSize: 40, fontWeight: '700', color: onDeepMuted, marginRight: space.xs }}>
+          {group ? currencySymbol(group.currency) : ''}
+        </Text>
+        <TextInput
+          value={amountText}
+          onChangeText={setAmountText}
+          placeholder="0.00"
+          placeholderTextColor="rgba(255,255,255,0.35)"
+          ref={amountRef}
+          keyboardType="decimal-pad"
+          selectionColor={brand.accent}
+          cursorColor={brand.accent}
+          accessibilityLabel={`Amount${group ? ` in ${group.currency}` : ''}`}
+          style={{
+            fontSize: 56,
+            fontWeight: '800',
+            letterSpacing: -1,
+            color: brand.onDeep,
+            minWidth: 120,
+            textAlign: 'center',
+            padding: 0,
+            fontVariant: ['tabular-nums'],
+          }}
+        />
       </View>
 
       {/* Description */}
       <TextInput
         value={description}
         onChangeText={setDescription}
-        placeholder="What was it for? e.g. Dinner"
-        placeholderTextColor="rgba(255,255,255,0.45)"
+        placeholder="What was it for?"
+        placeholderTextColor="rgba(255,255,255,0.5)"
         maxLength={120}
         selectionColor={brand.accent}
         cursorColor={brand.accent}
-        accessibilityLabel="Description"
+        accessibilityLabel="What was it for?"
         style={{
           ...type.body,
+          fontSize: 18,
           marginTop: space.xl,
           color: brand.onDeep,
           backgroundColor: 'rgba(255,255,255,0.08)',
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.14)',
-          borderRadius: radius.md,
+          borderRadius: radius.lg,
           paddingHorizontal: space.lg,
-          paddingVertical: space.md,
+          paddingVertical: space.md + 2,
           textAlign: 'center',
         }}
       />
@@ -434,38 +426,77 @@ export default function ExpenseFormScreen() {
     <HeroScreen header={header}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {!isEdit && !params.groupId && groups.length > 1 ? (
-        <View style={{ gap: space.md }}>
-          <SectionTitle title="Group" />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingHorizontal: space.lg,
-              gap: space.sm,
-            }}>
-            {groups.map((g) => (
-              <GroupPill key={g.id} id={g.id} name={g.name} selected={g.id === groupId} onPress={() => setGroupId(g.id)} />
+      <Gutter>
+        {/* Who paid and how it's split, in one line. Tap to change. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Change who paid and how it's split"
+          onPress={() => setSheet('split')}
+          android_ripple={{ color: c.surfaceAlt }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space.md,
+            padding: space.lg,
+            borderRadius: radius.lg,
+            backgroundColor: c.surfaceAlt,
+            borderWidth: splitProblem ? 1.5 : 0,
+            borderColor: c.owe,
+            overflow: 'hidden',
+          }}>
+          <Avatar name={name(payerId)} size={40} color={groupColor(payerId)} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="heading">Paid by {payerLabel}</Text>
+            <Text variant="caption" muted numberOfLines={2}>
+              {splitLine}
+            </Text>
+          </View>
+          <Text muted style={{ fontSize: 22 }}>
+            ›
+          </Text>
+        </Pressable>
+        {splitProblem ? (
+          <Text variant="label" color={c.owe}>
+            {splitProblem}. Tap above to fix it.
+          </Text>
+        ) : null}
+      </Gutter>
+
+      <Gutter>
+        {mutation.isError ? <Notice>{mutation.error.message}</Notice> : null}
+        <Button label={isEdit ? 'Save changes' : 'Save'} onPress={save} disabled={!canSave} loading={mutation.isPending} />
+        {blocker && !splitProblem ? (
+          <Text variant="caption" muted style={{ textAlign: 'center' }}>
+            {blocker}
+          </Text>
+        ) : null}
+      </Gutter>
+
+      {/* Who paid and how to split it */}
+      <Sheet
+        visible={sheet === 'split'}
+        onClose={() => setSheet(null)}
+        footer={
+          <>
+            {remaining ? (
+              <Text variant="label" color={c.owe} style={{ textAlign: 'center' }}>
+                {remaining}
+              </Text>
+            ) : null}
+            <Button label="Done" onPress={() => setSheet(null)} />
+          </>
+        }>
+        <View style={{ gap: space.sm }}>
+          <Text variant="heading">Paid by</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            {members.map((id) => (
+              <PersonPill key={id} label={id === myId ? 'You' : name(id)} selected={payerId === id} onPress={() => setPayerId(id)} />
             ))}
-          </ScrollView>
+          </View>
         </View>
-      ) : null}
 
-      <View style={{ gap: space.md }}>
-        <SectionTitle title="Paid by" />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm }}>
-          {members.map((id) => (
-            <PersonPill key={id} label={name(id)} selected={payerId === id} onPress={() => setPayerId(id)} />
-          ))}
-        </ScrollView>
-      </View>
-
-      <View style={{ gap: space.md }}>
-        <SectionTitle title="Split" />
-        <Gutter>
+        <View style={{ gap: space.sm }}>
+          <Text variant="heading">Split</Text>
           <Segmented
             value={method}
             onChange={(m) => {
@@ -476,7 +507,6 @@ export default function ExpenseFormScreen() {
           <Text variant="caption" muted>
             {METHODS.find((m) => m.id === method)?.hint}
           </Text>
-
           <Card style={{ paddingVertical: space.xs }}>
             {members.map((id, i) => {
               const on = isIncluded(id);
@@ -484,18 +514,10 @@ export default function ExpenseFormScreen() {
               return (
                 <View key={id}>
                   {i > 0 ? <Divider /> : null}
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: space.md,
-                      paddingVertical: space.md,
-                      opacity: on ? 1 : 0.55,
-                    }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, opacity: on ? 1 : 0.55 }}>
                     <Tick on={on} label={name(id)} onPress={() => setIncluded((s) => ({ ...s, [id]: !on }))} />
-                    <Avatar name={name(id)} size={34} />
                     <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
-                      {name(id)}
+                      {id === myId ? 'You' : name(id)}
                     </Text>
                     {method !== 'equal' && on ? (
                       <View
@@ -514,13 +536,7 @@ export default function ExpenseFormScreen() {
                           keyboardType={method === 'shares' ? 'number-pad' : 'decimal-pad'}
                           selectionColor={c.focus}
                           accessibilityLabel={`${name(id)} ${method === 'percentage' ? 'percentage' : method === 'shares' ? 'shares' : 'amount'}`}
-                          style={{
-                            ...type.body,
-                            color: c.text,
-                            width: 64,
-                            textAlign: 'right',
-                            paddingVertical: space.sm,
-                          }}
+                          style={{ ...type.body, color: c.text, width: 64, textAlign: 'right', paddingVertical: space.sm }}
                         />
                         {method === 'percentage' ? <Text muted> %</Text> : null}
                       </View>
@@ -528,11 +544,7 @@ export default function ExpenseFormScreen() {
                     <Text
                       variant="label"
                       color={share ? c.text : c.textMuted}
-                      style={{
-                        width: 80,
-                        textAlign: 'right',
-                        fontVariant: ['tabular-nums'],
-                      }}>
+                      style={{ width: 80, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
                       {share && group ? formatMoney(share.amount, group.currency) : on ? '—' : 'not in'}
                     </Text>
                   </View>
@@ -540,23 +552,42 @@ export default function ExpenseFormScreen() {
               );
             })}
           </Card>
-        </Gutter>
-      </View>
+        </View>
+      </Sheet>
 
-      <Gutter>
-        {summary ? (
-          <Text variant="label" muted style={{ textAlign: 'center' }}>
-            {summary}
-          </Text>
-        ) : null}
-        {blocker && amountText ? (
-          <Text variant="label" color={remaining ? c.focus : c.owe} style={{ textAlign: 'center' }}>
-            {blocker}
-          </Text>
-        ) : null}
-        {mutation.isError ? <Notice>{mutation.error.message}</Notice> : null}
-        <Button label={isEdit ? 'Save changes' : 'Save expense'} onPress={save} disabled={!canSave} loading={mutation.isPending} />
-      </Gutter>
+      {/* Which group (only when starting from Home with more than one group) */}
+      <Sheet visible={sheet === 'group'} onClose={() => setSheet(null)} title="Which group?">
+        <View style={{ gap: space.sm }}>
+          {groups.map((g) => (
+            <Pressable
+              key={g.id}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: g.id === groupId }}
+              onPress={() => {
+                setGroupId(g.id);
+                setPayerId(myId);
+                setIncluded({});
+                setValues({});
+                setSheet(null);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: space.md,
+                padding: space.md,
+                borderRadius: radius.lg,
+                borderWidth: g.id === groupId ? 2 : 1,
+                borderColor: g.id === groupId ? c.focus : c.border,
+                backgroundColor: c.surface,
+              }}>
+              <GroupIcon group={g} size={40} />
+              <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
+                {g.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </Sheet>
     </HeroScreen>
   );
 }

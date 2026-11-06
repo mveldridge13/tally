@@ -33,6 +33,8 @@ export interface Group {
   id: string;
   name: string;
   currency: string;
+  /** Emoji shown instead of the first letter; null for none. */
+  icon: string | null;
   /** Current members only. People who left keep their history and still appear in expenses. */
   memberIds: string[];
   roles: Record<string, GroupRole>;
@@ -111,7 +113,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
     supabase
       .from('groups')
       .select(
-        `id, name, currency, created_at,
+        `id, name, currency, icon, created_at,
          group_members ( user_id, role, left_at, profiles ( id, name, is_guest ) ),
          expenses ( id, description, amount_cents, payer_id, created_by, split_method, occurred_at,
                     created_at, updated_at, deleted_at,
@@ -150,7 +152,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
       roles[m.user_id] = m.role;
       if (m.user_id === myId) myRole = m.role;
     }
-    data.groups.push({ id: g.id, name: g.name, currency: g.currency, memberIds, roles, myRole });
+    data.groups.push({ id: g.id, name: g.name, currency: g.currency, icon: g.icon, memberIds, roles, myRole });
 
     for (const e of g.expenses) {
       data.expenses.push({
@@ -238,8 +240,12 @@ function useInvalidating<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) 
 }
 
 export function useCreateGroup() {
-  return useInvalidating(async (input: { name: string; currency: string }) => {
-    const { data, error } = await supabase.rpc('create_group', { p_name: input.name, p_currency: input.currency });
+  return useInvalidating(async (input: { name: string; currency: string; icon?: string | null }) => {
+    const { data, error } = await supabase.rpc('create_group', {
+      p_name: input.name,
+      p_currency: input.currency,
+      p_icon: input.icon ?? undefined,
+    });
     if (error) throw error;
     return data;
   });
@@ -457,6 +463,14 @@ export function useAddGuest() {
     const { data, error } = await supabase.rpc('add_guest', { p_group_id: input.groupId, p_name: input.name.trim() });
     if (error) throw error;
     return data;
+  });
+}
+
+/** Set or clear a group's emoji (empty string clears it). Any member can. */
+export function useSetGroupIcon() {
+  return useInvalidating(async (input: { groupId: string; icon: string | null }) => {
+    const { error } = await supabase.rpc('set_group_icon', { p_group_id: input.groupId, p_icon: input.icon ?? '' });
+    if (error) throw error;
   });
 }
 

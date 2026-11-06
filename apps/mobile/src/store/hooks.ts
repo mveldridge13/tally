@@ -9,6 +9,13 @@ export function useGroupSummaries(): GroupSummary[] {
   return useMemo(() => data.groups.map((g) => summarizeGroup(g, data.expenses, data.settlements, myId)), [data, myId]);
 }
 
+/** The one person you owe or who owes you in a group, when there's exactly one. */
+export function soleOther(summary: GroupSummary, myId: string): string | undefined {
+  const mine = summary.transfers.filter((t) => t.fromUserId === myId || t.toUserId === myId);
+  if (mine.length !== 1) return undefined;
+  return mine[0]!.fromUserId === myId ? mine[0]!.toUserId : mine[0]!.fromUserId;
+}
+
 export function useGroupSummary(groupId: string): GroupSummary | undefined {
   return useGroupSummaries().find((s) => s.group.id === groupId);
 }

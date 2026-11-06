@@ -280,6 +280,7 @@ export type Database = {
           created_at: string;
           created_by: string;
           currency: string;
+          icon: string | null;
           id: string;
           name: string;
           updated_at: string;
@@ -290,6 +291,7 @@ export type Database = {
           created_at?: string;
           created_by: string;
           currency: string;
+          icon?: string | null;
           id?: string;
           name: string;
           updated_at?: string;
@@ -299,6 +301,7 @@ export type Database = {
           created_at?: string;
           created_by?: string;
           currency?: string;
+          icon?: string | null;
           id?: string;
           name?: string;
           updated_at?: string;
@@ -528,12 +531,13 @@ export type Database = {
         Returns: string;
       };
       create_group: {
-        Args: { p_currency: string; p_name: string };
+        Args: { p_currency: string; p_icon?: string; p_name: string };
         Returns: {
           archived_at: string | null;
           created_at: string;
           created_by: string;
           currency: string;
+          icon: string | null;
           id: string;
           name: string;
           updated_at: string;
@@ -577,6 +581,7 @@ export type Database = {
       remove_payid: { Args: Record<PropertyKey, never>; Returns: undefined };
       require_user: { Args: Record<PropertyKey, never>; Returns: string };
       set_payid: { Args: { p_account_name?: string; p_type: string; p_value: string }; Returns: undefined };
+      set_group_icon: { Args: { p_group_id: string; p_icon: string }; Returns: undefined };
       shares_group_with: { Args: { p_user_id: string }; Returns: boolean };
       split_partners: {
         Args: Record<PropertyKey, never>;

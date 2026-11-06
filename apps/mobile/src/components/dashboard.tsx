@@ -12,10 +12,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { GroupSummary } from '@/lib/data';
 import { relativeTime } from '@/lib/format';
-import { PRESS_DELAY, balanceColor, brand, groupColor, radius, space, useColors } from '@/theme';
+import { PRESS_DELAY, balanceColor, brand, radius, space, useColors } from '@/theme';
 import { CONTENT_MAX_WIDTH } from '@/lib/layout';
 import { HeroGlow } from './brand';
-import { Avatar, Text } from './ui';
+import { GroupIcon } from './friendly';
+import { Text } from './ui';
 
 /** Secondary text on navy (re-exported from the theme for convenience). */
 export const onDeepMuted = brand.onDeepMuted;
@@ -308,7 +309,7 @@ export function Gutter({ children }: { children: ReactNode }) {
 }
 
 function balanceStatus(cents: Cents) {
-  return cents === 0 ? 'Settled up' : cents > 0 ? 'You’re owed' : 'You owe';
+  return cents === 0 ? 'All square' : cents > 0 ? 'You’re owed' : 'You owe';
 }
 
 /** Compact card for horizontal carousels (Home). */
@@ -334,7 +335,7 @@ export function GroupCard({ summary }: { summary: GroupSummary }) {
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
-        <Avatar name={group.name} color={groupColor(group.id)} square size={40} />
+        <GroupIcon group={group} size={40} />
         <Text variant="caption" muted>
           {group.memberIds.length} {group.memberIds.length === 1 ? 'person' : 'people'}
         </Text>
@@ -388,7 +389,7 @@ export function GroupListCard({
         opacity: pressed ? 0.9 : 1,
         overflow: 'hidden',
       })}>
-      <Avatar name={group.name} color={groupColor(group.id)} square size={48} />
+      <GroupIcon group={group} size={48} />
       <View style={{ flex: 1, gap: 3 }}>
         <Text variant="heading" numberOfLines={1}>
           {group.name}

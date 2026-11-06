@@ -1,9 +1,10 @@
 import { createGroupSchema } from '@tally/shared';
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, Pressable, TextInput, View, type TextInputInstance } from 'react-native';
+import { Alert, Pressable, ScrollView, TextInput, View, type TextInputInstance } from 'react-native';
 
 import { Gutter, HeroNav, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
+import { GROUP_ICONS } from '@/components/friendly';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Button, Card, Notice, Text } from '@/components/ui';
 import { CURRENCIES, isSupportedCurrency, type Currency } from '@/lib/currencies';
@@ -96,6 +97,7 @@ export default function NewGroupScreen() {
   const [currency, setCurrency] = useState<Currency>(isSupportedCurrency(myCurrency) ? myCurrency : 'USD');
   // Most groups use your usual currency, so the full list stays hidden until asked for.
   const [pickingCurrency, setPickingCurrency] = useState(false);
+  const [icon, setIcon] = useState<string | null>(null);
 
   // Open the keyboard once the form has slid up, not during the animation.
   const nameRef = useRef<TextInputInstance>(null);
@@ -111,7 +113,7 @@ export default function NewGroupScreen() {
     if (!parsed.success || createGroup.isPending || addMembers.isPending) return;
     let group;
     try {
-      group = await createGroup.mutateAsync(parsed.data);
+      group = await createGroup.mutateAsync({ ...parsed.data, icon });
     } catch {
       return; // shown below the form
     }
@@ -138,8 +140,8 @@ export default function NewGroupScreen() {
             width: 84,
             height: 84,
             borderRadius: radius.xl,
-            backgroundColor: initial ? brand.accent : 'rgba(255,255,255,0.08)',
-            borderWidth: initial ? 0 : 1.5,
+            backgroundColor: icon || initial ? brand.accent : 'rgba(255,255,255,0.08)',
+            borderWidth: icon || initial ? 0 : 1.5,
             borderStyle: 'dashed',
             borderColor: 'rgba(255,255,255,0.3)',
             alignItems: 'center',
@@ -147,11 +149,11 @@ export default function NewGroupScreen() {
           }}>
           <Text
             style={{
-              fontSize: 36,
+              fontSize: icon ? 44 : 36,
               fontWeight: '800',
               color: initial ? brand.onAccent : onDeepMuted,
             }}>
-            {initial || '?'}
+            {icon || initial || '?'}
           </Text>
         </View>
 
@@ -182,6 +184,35 @@ export default function NewGroupScreen() {
           {currency} · {name.trim() ? 'Looks good' : 'A trip, a flat, a dinner club…'}
         </Text>
       </View>
+
+      {/* Optional emoji instead of the first letter. Tap again to go back to the letter. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginTop: space.lg, marginHorizontal: -space.xl }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.sm }}>
+        {GROUP_ICONS.map((emoji) => {
+          const on = icon === emoji;
+          return (
+            <Pressable
+              key={emoji}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`Icon ${emoji}`}
+              onPress={() => setIcon(on ? null : emoji)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: radius.md,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: on ? brand.accent : 'rgba(255,255,255,0.1)',
+              }}>
+              <Text style={{ fontSize: 22 }}>{emoji}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </>
   );
 
