@@ -564,6 +564,7 @@ export type Database = {
       };
       group_role_of: { Args: { p_group_id: string; p_user_id: string }; Returns: Database['public']['Enums']['group_role'] };
       is_group_member: { Args: { p_group_id: string }; Returns: boolean };
+      group_reminders: { Args: { p_group_id: string }; Returns: { last_reminded_at: string; user_id: string }[] };
       is_group_owner: { Args: { p_group_id: string }; Returns: boolean };
       is_member_of: { Args: { p_group_id: string; p_user_id: string }; Returns: boolean };
       is_valid_abn: { Args: { p_abn: string }; Returns: boolean };
@@ -576,6 +577,8 @@ export type Database = {
         Returns: {
           actor_name: string | null;
           created_at: string;
+          amount_cents: number | null;
+          group_currency: string;
           group_icon: string | null;
           group_id: string;
           group_name: string;
@@ -584,6 +587,7 @@ export type Database = {
           read_at: string | null;
         }[];
       };
+      remind_to_settle: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       record_settlement: {
         Args: {
           p_amount_cents: number;

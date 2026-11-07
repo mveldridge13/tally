@@ -1,3 +1,4 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -16,6 +17,8 @@ import {
   useDeleteGroup,
   useLeaveGroup,
   useNameOf,
+  useRecentlyReminded,
+  useRemindToSettle,
   useSetGroupIcon,
   useSplitPartners,
   useTallyData,
@@ -55,6 +58,11 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const leaveGroup = useLeaveGroup();
   const { data: partners } = useSplitPartners();
   const picked = useSelection();
+  // Owner only: settle-up reminders, one per person per day.
+  const ownsGroup = data.groups.find((g) => g.id === id)?.myRole === 'owner';
+  const recentlyReminded = useRecentlyReminded(id, ownsGroup);
+  const remind = useRemindToSettle();
+  const [justReminded, setJustReminded] = useState<ReadonlySet<string>>(new Set());
 
   if (!summary) {
     return (
@@ -70,6 +78,16 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const isOwner = group.myRole === 'owner';
   const other = soleOther(summary, myId);
   const myTransfer = transfers.find((t) => t.fromUserId === myId) ?? transfers.find((t) => t.toUserId === myId);
+  const remindedToday = (uid: string) => justReminded.has(uid) || recentlyReminded.has(uid);
+  function sendReminder(uid: string) {
+    remind.mutate(
+      { groupId: group.id, userId: uid },
+      {
+        onSuccess: () => setJustReminded((prev) => new Set(prev).add(uid)),
+        onError: (e) => Alert.alert('Couldn’t send the reminder', e instanceof Error ? e.message : 'Please try again.'),
+      },
+    );
+  }
 
   // People you split with elsewhere who aren't in this group yet.
   const addable = partners.filter((p) => !group.memberIds.includes(p.id));
@@ -247,6 +265,37 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
                   <Text variant="caption" color={bal === 0 ? c.textMuted : balanceColor(c, bal)} numberOfLines={1}>
                     {bal === 0 ? 'square' : `${bal > 0 ? '+' : '−'}${money(bal)}`}
                   </Text>
+                  {/* Owner only: nudge someone who owes. Guests have no app to receive it. */}
+                  {isOwner && !isMe && !guest && bal < 0 ? (
+                    remindedToday(uid) ? (
+                      <Text variant="caption" muted style={{ marginTop: 2 }}>
+                        Reminded
+                      </Text>
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remind ${name(uid)} to settle up`}
+                        onPress={() => sendReminder(uid)}
+                        disabled={remind.isPending}
+                        hitSlop={6}
+                        style={({ pressed }) => ({
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 3,
+                          marginTop: 2,
+                          paddingVertical: 3,
+                          paddingHorizontal: space.sm,
+                          borderRadius: radius.pill,
+                          backgroundColor: c.surfaceAlt,
+                          opacity: pressed || remind.isPending ? 0.6 : 1,
+                        })}>
+                        <MaterialIcons name="notifications-none" size={13} color={c.primary} />
+                        <Text variant="caption" color={c.primary} style={{ fontWeight: '700' }}>
+                          Remind
+                        </Text>
+                      </Pressable>
+                    )
+                  ) : null}
                 </Pressable>
               );
             })}

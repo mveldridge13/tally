@@ -111,3 +111,55 @@ describe('Notifications', () => {
     expect((await notes(bob)).length).toBe(2);
   });
 });
+
+describe('Settle-up reminders', () => {
+  let owner: Awaited<ReturnType<typeof signUp>>;
+  let member: Awaited<ReturnType<typeof signUp>>;
+  let other: Awaited<ReturnType<typeof signUp>>;
+  let groupId: string;
+
+  beforeAll(async () => {
+    [owner, member, other] = await Promise.all([signUp('RemOwner'), signUp('RemMember'), signUp('RemOther')]);
+    const { data: g } = await owner.client.rpc('create_group', { p_name: 'Flat', p_currency: 'AUD' });
+    groupId = g.id;
+    for (const who of [member, other]) {
+      const { data: t } = await owner.client.rpc('create_invite', { p_group_id: groupId });
+      await who.client.rpc('accept_invite', { p_token: t });
+    }
+    // Owner paid 60.00 for the owner and the member: the member owes 30.00. Other is square.
+    await owner.client.rpc('create_expense', {
+      p_group_id: groupId,
+      p_description: 'Power',
+      p_amount_cents: 6000,
+      p_payer_id: owner.id,
+      p_split_method: 'equal',
+      p_splits: [
+        { user_id: owner.id, amount_cents: 3000 },
+        { user_id: member.id, amount_cents: 3000 },
+      ],
+    });
+  });
+
+  it('only the owner can remind, and only someone who owes', async () => {
+    expect((await member.client.rpc('remind_to_settle', { p_group_id: groupId, p_user_id: other.id })).error?.message).toMatch(/Only the group owner/);
+    expect((await owner.client.rpc('remind_to_settle', { p_group_id: groupId, p_user_id: other.id })).error?.message).toMatch(/don't owe anything/);
+    expect((await owner.client.rpc('remind_to_settle', { p_group_id: groupId, p_user_id: owner.id })).error).not.toBeNull();
+  });
+
+  it('the member gets a reminder with what they owe', async () => {
+    expect((await owner.client.rpc('remind_to_settle', { p_group_id: groupId, p_user_id: member.id })).error).toBeNull();
+    const list = (await member.client.rpc('my_notifications')).data as (Note & { amount_cents: number; group_currency: string })[];
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ kind: 'settle_reminder', group_id: groupId, actor_name: 'RemOwner', amount_cents: 3000, group_currency: 'AUD' });
+  });
+
+  it('once a day per person', async () => {
+    expect((await owner.client.rpc('remind_to_settle', { p_group_id: groupId, p_user_id: member.id })).error?.message).toMatch(/Already reminded/);
+  });
+
+  it('the owner sees when each person was last reminded; members see nothing', async () => {
+    const { data } = await owner.client.rpc('group_reminders', { p_group_id: groupId });
+    expect(data.map((r: { user_id: string }) => r.user_id)).toEqual([member.id]);
+    expect((await member.client.rpc('group_reminders', { p_group_id: groupId })).data).toEqual([]);
+  });
+});

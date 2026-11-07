@@ -589,9 +589,11 @@ export async function createInvite(groupId: string, guestId?: string): Promise<s
 
 export interface AppNotification {
   id: string;
-  kind: 'added_to_group';
-  group: { id: string; name: string; icon: string | null };
+  kind: 'added_to_group' | 'settle_reminder';
+  group: { id: string; name: string; icon: string | null; currency: string };
   actorName: string;
+  /** settle_reminder: what you owed when reminded, in the group's currency. */
+  amount: Cents | null;
   at: string;
   read: boolean;
 }
@@ -607,8 +609,9 @@ export function useNotifications() {
       return data.map((n) => ({
         id: n.id,
         kind: n.kind as AppNotification['kind'],
-        group: { id: n.group_id, name: n.group_name, icon: n.group_icon },
+        group: { id: n.group_id, name: n.group_name, icon: n.group_icon, currency: n.group_currency },
         actorName: n.actor_name ?? 'Someone',
+        amount: n.amount_cents,
         at: n.created_at,
         read: n.read_at !== null,
       }));
@@ -628,5 +631,28 @@ export function useMarkNotificationsRead() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [...TALLY_KEY, 'notifications'] }),
+  });
+}
+
+/** Owner only: members of a group reminded to settle in the last 24 hours (worked out when fetched). */
+export function useRecentlyReminded(groupId: string, enabled: boolean) {
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'reminders', groupId],
+    queryFn: async (): Promise<ReadonlySet<string>> => {
+      const { data, error } = await supabase.rpc('group_reminders', { p_group_id: groupId });
+      if (error) throw error;
+      const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      return new Set(data.filter((r) => new Date(r.last_reminded_at).getTime() > dayAgo).map((r) => r.user_id));
+    },
+    enabled,
+  });
+  return query.data ?? new Set<string>();
+}
+
+/** Owner only: remind a member who owes money to settle up (once a day per person). */
+export function useRemindToSettle() {
+  return useInvalidating(async (input: { groupId: string; userId: string }) => {
+    const { error } = await supabase.rpc('remind_to_settle', { p_group_id: input.groupId, p_user_id: input.userId });
+    if (error) throw error;
   });
 }

@@ -1,3 +1,4 @@
+import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -6,29 +7,57 @@ import { Gutter, HeroScreen } from '@/components/dashboard';
 import { GroupIcon } from '@/components/friendly';
 import { Card, Divider, Notice, Text } from '@/components/ui';
 import { useMarkNotificationsRead, useNotifications, type AppNotification } from '@/lib/data';
+import { useMyId } from '@/lib/auth';
 import { relativeTime } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
+import { useGroupSummaries } from '@/store/hooks';
 import { space, useColors } from '@/theme';
 
 function Row({ n }: { n: AppNotification }) {
   const c = useColors();
+  const myId = useMyId();
+  const summaries = useGroupSummaries();
+  const reminder = n.kind === 'settle_reminder';
+
+  function open() {
+    if (reminder) {
+      // Straight to Settle up with what you owe now; if you've already settled, the group instead.
+      const mine = summaries.find((s) => s.group.id === n.group.id)?.transfers.find((t) => t.fromUserId === myId);
+      if (mine) {
+        router.push({
+          pathname: '/settle',
+          params: { groupId: n.group.id, from: mine.fromUserId, to: mine.toUserId, amount: String(mine.amount) },
+        });
+        return;
+      }
+    }
+    router.push(`/group/${n.group.id}`);
+  }
+
+  const bold = (t: string) => (
+    <Text variant="body" style={{ fontWeight: '700' }}>
+      {t}
+    </Text>
+  );
+
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => router.push(`/group/${n.group.id}`)}
+      onPress={open}
       android_ripple={{ color: c.surfaceAlt }}
       style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
       <GroupIcon group={n.group} size={44} />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text variant="body">
-          <Text variant="body" style={{ fontWeight: '700' }}>
-            {n.actorName}
-          </Text>{' '}
-          added you to{' '}
-          <Text variant="body" style={{ fontWeight: '700' }}>
-            {n.group.name}
+        {reminder ? (
+          <Text variant="body">
+            {bold(n.actorName)} reminded you to settle up in {bold(n.group.name)}
+            {n.amount ? ` · You owe ${formatMoney(n.amount, n.group.currency)}` : ''}
           </Text>
-        </Text>
+        ) : (
+          <Text variant="body">
+            {bold(n.actorName)} added you to {bold(n.group.name)}
+          </Text>
+        )}
         <Text variant="caption" muted>
           {relativeTime(n.at)}
         </Text>
@@ -59,7 +88,9 @@ export default function NotificationsScreen() {
         {error ? <Notice>Couldn’t load notifications. Pull down to try again.</Notice> : null}
         {data.length === 0 ? (
           <Card>
-            <Text muted>{isLoading ? 'Loading…' : 'Nothing yet. You’ll see it here when someone adds you to a group.'}</Text>
+            <Text muted>
+              {isLoading ? 'Loading…' : 'Nothing yet. You’ll see it here when someone adds you to a group or reminds you to settle up.'}
+            </Text>
           </Card>
         ) : (
           <Card style={{ paddingVertical: 0 }}>
