@@ -2,7 +2,7 @@ import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, QuickAction, SectionTitle, TotalPill } from '@/components/dashboard';
+import { CardText, Gutter, HeroScreen, QuickAction, SectionTitle, StatRow, TotalPill, useCardInk } from '@/components/dashboard';
 import { Avatar, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useNameOf, useReplacedPayment, useTallyData, useVoidSettlement } from '@/lib/data';
@@ -19,15 +19,16 @@ function formatDateTime(iso: string) {
   });
 }
 
-/** One person in the "paid → received" strip on the navy header. */
+/** One person in the "paid → received" strip on the summary card. */
 function Party({ who, role }: { who: string; role: string }) {
+  const ink = useCardInk();
   return (
     <View style={{ alignItems: 'center', gap: space.sm, flex: 1 }}>
-      <Avatar name={who} size={56} color={brand.tintOnDeep} />
-      <Text variant="label" color={brand.onDeep} numberOfLines={1}>
+      <Avatar name={who} size={56} color={brand.deep} />
+      <Text variant="label" color={ink.text} numberOfLines={1}>
         {who}
       </Text>
-      <Text variant="caption" color={onDeepMuted}>
+      <Text variant="caption" color={ink.muted}>
         {role}
       </Text>
     </View>
@@ -51,7 +52,7 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
 
   if (!payment || !group) {
     return (
-      <HeroScreen variant={embedded ? 'card' : 'full'} header={<HeroNav mode={embedded ? 'none' : 'back'} title="Payment" />}>
+      <HeroScreen variant={embedded ? 'card' : 'full'} nav={embedded ? 'none' : 'back'} title="Payment">
         <Gutter>
           <Notice tone="info">{isLoading ? 'Loading…' : 'This payment has been undone or corrected.'}</Notice>
         </Gutter>
@@ -83,44 +84,46 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
     );
   }
 
-  const header = (
+  const card = (
     <>
-      <HeroNav mode={embedded ? 'none' : 'back'} eyebrow={`${group.name} · Payment`} title={money} />
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginTop: space.xl,
-        }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Party who={from} role="paid" />
-        <Text style={{ fontSize: 28, color: brand.accent }}>→</Text>
+        <CardText style={{ fontSize: 28 }}>→</CardText>
         <Party who={to} role="received" />
       </View>
-      <Text variant="body" color={onDeepMuted} style={{ textAlign: 'center', marginTop: space.lg }}>
+      <CardText muted style={{ textAlign: 'center', marginTop: space.lg }}>
         {formatDateTime(payment.occurredAt)}
-      </Text>
-      <View style={{ flexDirection: 'row', gap: space.md, marginTop: space.lg }}>
+      </CardText>
+      <StatRow>
         <TotalPill
           label="Effect on you"
           value={myEffect === 0 ? 'Not involved' : myEffect > 0 ? `Paid back ${money}` : `Received ${money}`}
           tone={myEffect > 0 ? 'owed' : myEffect < 0 ? 'owe' : 'neutral'}
         />
-      </View>
-      <View style={{ flexDirection: 'row', marginTop: space.xl }}>
-        <QuickAction
-          icon="✎"
-          label="Correct"
-          primary
-          onPress={() => router.push({ pathname: '/settle', params: { paymentId: payment.id } })}
-        />
-        <QuickAction icon="◎" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
-        <QuickAction icon="↺" label="Undo" onPress={confirmUndo} />
-      </View>
+      </StatRow>
     </>
   );
 
   return (
-    <HeroScreen variant={embedded ? 'card' : 'full'} header={header}>
+    <HeroScreen
+      variant={embedded ? 'card' : 'full'}
+      nav={embedded ? 'none' : 'back'}
+      eyebrow={`${group.name} · Payment`}
+      title={money}
+      actions={
+        <>
+          <QuickAction
+            bold
+            icon="edit"
+            label="Correct"
+            onPress={() => router.push({ pathname: '/settle', params: { paymentId: payment.id } })}
+          />
+          <QuickAction bold icon="groups" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
+          <QuickAction bold icon="undo" label="Undo" danger onPress={confirmUndo} />
+        </>
+      }
+      cardTone="light"
+      card={card}>
       {voidSettlement.isError ? (
         <Gutter>
           <Notice>{voidSettlement.error.message}</Notice>

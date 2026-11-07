@@ -7,7 +7,7 @@ export function inviteMessage(groupName: string, token: string, guestName?: stri
   const intro = guestName
     ? `Join "${groupName}" on Tally as ${guestName}. Everything already recorded for you comes with you.`
     : `Join "${groupName}" on Tally so we can split expenses.`;
-  return `${intro}\n\nTap to join: ${inviteLink(token)}\n\nOr in Tally go to Groups → Join a group and paste this code:\n${token}`;
+  return `${intro}\n\nTap to join: ${inviteLink(token)}`;
 }
 
 /**

@@ -513,6 +513,8 @@ export type Database = {
       accept_invite: { Args: { p_token: string }; Returns: string };
       add_guest: { Args: { p_group_id: string; p_name: string }; Returns: string };
       add_members: { Args: { p_group_id: string; p_user_ids: string[] }; Returns: undefined };
+      can_see_expense: { Args: { p_created_by: string; p_group_id: string }; Returns: boolean };
+      can_see_settlement: { Args: { p_created_by: string; p_from: string; p_group_id: string; p_to: string }; Returns: boolean };
       correct_settlement: {
         Args: { p_amount_cents: number; p_note?: string; p_occurred_at?: string; p_settlement_id: string };
         Returns: string;
@@ -562,10 +564,12 @@ export type Database = {
       };
       group_role_of: { Args: { p_group_id: string; p_user_id: string }; Returns: Database['public']['Enums']['group_role'] };
       is_group_member: { Args: { p_group_id: string }; Returns: boolean };
+      is_group_owner: { Args: { p_group_id: string }; Returns: boolean };
       is_member_of: { Args: { p_group_id: string; p_user_id: string }; Returns: boolean };
       is_valid_abn: { Args: { p_abn: string }; Returns: boolean };
       leave_group: { Args: { p_group_id: string }; Returns: undefined };
       member_net_balance: { Args: { p_group_id: string; p_user_id: string }; Returns: number };
+      my_group_summaries: { Args: Record<PropertyKey, never>; Returns: Json };
       record_settlement: {
         Args: {
           p_amount_cents: number;
@@ -580,12 +584,25 @@ export type Database = {
       remove_member: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       remove_payid: { Args: Record<PropertyKey, never>; Returns: undefined };
       require_user: { Args: Record<PropertyKey, never>; Returns: string };
-      set_payid: { Args: { p_account_name?: string; p_type: string; p_value: string }; Returns: undefined };
       set_group_icon: { Args: { p_group_id: string; p_icon: string }; Returns: undefined };
+      set_payid: { Args: { p_account_name?: string; p_type: string; p_value: string }; Returns: undefined };
       shares_group_with: { Args: { p_user_id: string }; Returns: boolean };
+      simplified_transfers: {
+        Args: { p_group_id: string };
+        Returns: {
+          amount_cents: number;
+          from_user_id: string;
+          to_user_id: string;
+        }[];
+      };
       split_partners: {
         Args: Record<PropertyKey, never>;
-        Returns: { last_shared_at: string; name: string; shared_groups: number; user_id: string }[];
+        Returns: {
+          last_shared_at: string;
+          name: string;
+          shared_groups: number;
+          user_id: string;
+        }[];
       };
       transfer_ownership: { Args: { p_group_id: string; p_new_owner_id: string }; Returns: undefined };
       update_expense: {

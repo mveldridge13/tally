@@ -4,14 +4,14 @@ import { View } from 'react-native';
 
 import { ActivityList } from '@/components/activity-list';
 import { TallyMark } from '@/components/brand';
-import { FilterChips, Gutter, HeroScreen, HeroTitle, onDeepMuted, TotalPill } from '@/components/dashboard';
+import { CardFigure, FilterChips, Gutter, HeroScreen, onDeepMuted, StatRow, TotalPill } from '@/components/dashboard';
 import { Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useTallyData } from '@/lib/data';
 import { dayLabel } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { useActivity, type ActivityItem } from '@/store/hooks';
-import { brand, space } from '@/theme';
+import { space } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Kind = 'all' | 'expenses' | 'payments' | 'mine';
@@ -74,46 +74,28 @@ export default function ActivityScreen() {
 
   const hasAny = all.length > 0;
 
-  const header = (
+  const card = hasAny ? (
     <>
-      <HeroTitle eyebrow="Activity" title={hasAny ? `${month.label} so far` : 'Nothing yet'} />
-      {hasAny ? (
-        <>
-          <View style={{ marginTop: space.xl, gap: space.xs }}>
-            <Text variant="label" color={onDeepMuted}>
-              Your share of spending
-            </Text>
-            <Text
-              style={{
-                fontSize: 40,
-                fontWeight: '800',
-                letterSpacing: -1,
-                color: brand.onDeep,
-                fontVariant: ['tabular-nums'],
-              }}>
-              {formatMoney(month.myShare, month.currency)}
-            </Text>
-            <Text variant="caption" color={onDeepMuted}>
-              What you’ve spent this month, after splitting with others.
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: space.md, marginTop: space.lg }}>
-            <TotalPill label="Expenses" value={String(month.expenses)} tone="owed" />
-            <TotalPill label="Payments" value={String(month.payments)} tone="neutral" />
-          </View>
-        </>
-      ) : (
-        <View style={{ marginTop: space.xl, gap: space.sm }}>
-          <TallyMark size={48} />
-          <Text variant="body" color={onDeepMuted}>
-            Expenses and payments from all your groups will appear here. Tap any item to see the details.
-          </Text>
-        </View>
-      )}
+      <CardFigure
+        label="Your share of spending"
+        value={formatMoney(month.myShare, month.currency)}
+        note="What you’ve spent this month, after splitting with others."
+      />
+      <StatRow>
+        <TotalPill label="Expenses" value={String(month.expenses)} tone="neutral" />
+        <TotalPill label="Payments" value={String(month.payments)} tone="neutral" />
+      </StatRow>
     </>
+  ) : (
+    <View style={{ gap: space.sm }}>
+      <TallyMark size={48} />
+      <Text variant="body" color={onDeepMuted}>
+        Expenses and payments from all your groups will appear here. Tap any item to see the details.
+      </Text>
+    </View>
   );
 
-  // Filters and the feed, shared by the folded and unfolded layouts.
+  // Filters and the feed.
   const body = (
     <>
       {error ? (
@@ -180,59 +162,15 @@ export default function ActivityScreen() {
     </>
   );
 
-  if (!wide) {
-    return (
-      <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
-        {body}
-      </HeroScreen>
-    );
-  }
-
-  // ─── Unfolded: the same page, full width, with the summary spread across it ──
-  const wideHeader = (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: space.xl }}>
-        <View style={{ gap: space.xs, flexShrink: 1 }}>
-          <Text variant="body" color={onDeepMuted}>
-            Activity
-          </Text>
-          <Text variant="title" color={brand.onDeep}>
-            {hasAny ? `${month.label} so far` : 'Nothing yet'}
-          </Text>
-          {hasAny ? (
-            <>
-              <Text variant="label" color={onDeepMuted} style={{ marginTop: space.lg }}>
-                Your share of spending
-              </Text>
-              <Text style={{ fontSize: 48, fontWeight: '800', letterSpacing: -1, color: brand.onDeep, fontVariant: ['tabular-nums'] }}>
-                {formatMoney(month.myShare, month.currency)}
-              </Text>
-              <Text variant="caption" color={onDeepMuted}>
-                What you’ve spent this month, after splitting with others.
-              </Text>
-            </>
-          ) : (
-            <Text variant="body" color={onDeepMuted} style={{ marginTop: space.lg }}>
-              Expenses and payments from all your groups will appear here. Tap any item to see the details.
-            </Text>
-          )}
-        </View>
-        {hasAny ? (
-          <View style={{ flexDirection: 'row', gap: space.md }}>
-            <View style={{ width: 180 }}>
-              <TotalPill label="Expenses" value={String(month.expenses)} tone="owed" />
-            </View>
-            <View style={{ width: 180 }}>
-              <TotalPill label="Payments" value={String(month.payments)} tone="neutral" />
-            </View>
-          </View>
-        ) : null}
-      </View>
-    </>
-  );
-
   return (
-    <HeroScreen header={wideHeader} fullWidth refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
+    <HeroScreen
+      nav="tab"
+      title="Activity"
+      subtitle={hasAny ? `${month.label} so far` : 'Nothing yet'}
+      card={card}
+      fullWidth={wide}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}>
       {body}
     </HeroScreen>
   );

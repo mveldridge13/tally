@@ -11,8 +11,9 @@ import {
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, TextInput, View, type TextInputInstance } from 'react-native';
+import { KeyboardController } from 'react-native-keyboard-controller';
 
-import { Gutter, HeroIconButton, HeroNav, HeroScreen, onDeepMuted } from '@/components/dashboard';
+import { Gutter, HeroScreen, onDeepMuted } from '@/components/dashboard';
 import { GroupIcon, Sheet } from '@/components/friendly';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
@@ -203,6 +204,12 @@ export default function ExpenseFormScreen() {
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
   const [sheet, setSheet] = useState<'split' | 'group' | null>(null);
+  // Close the keyboard (and wait until it's gone) before a sheet slides up. Otherwise the keyboard
+  // closing tugs the sheet back down mid-slide, which shows as a flicker.
+  const openSheet = async (name: 'split' | 'group') => {
+    if (KeyboardController.isVisible()) await KeyboardController.dismiss();
+    setSheet(name);
+  };
 
   // Open the keypad once the form has slid up, not during the animation.
   const amountRef = useRef<TextInputInstance>(null);
@@ -291,7 +298,7 @@ export default function ExpenseFormScreen() {
   const title = isEdit ? 'Edit expense' : 'New expense';
   if (isEdit && !editing) {
     return (
-      <HeroScreen header={<HeroNav mode="close" title={title} />}>
+      <HeroScreen nav="close" title={title}>
         <Stack.Screen options={{ headerShown: false }} />
         <Gutter>
           <Notice tone="info">This expense no longer exists.</Notice>
@@ -341,15 +348,14 @@ export default function ExpenseFormScreen() {
   const splitProblem = amountText && Number.isFinite(amount) && amount > 0 && !preview.ok ? (remaining ?? preview.error) : null;
   const canPickGroup = !isEdit && !params.groupId && groups.length > 1;
 
-  const header = (
+  const card = (
     <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 }}>
-        <HeroIconButton icon="close" />
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={canPickGroup ? `Group: ${group?.name ?? 'none'}. Change group` : `Group: ${group?.name ?? 'none'}`}
           disabled={!canPickGroup}
-          onPress={() => setSheet('group')}
+          onPress={() => void openSheet('group')}
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -366,11 +372,10 @@ export default function ExpenseFormScreen() {
             {canPickGroup ? '  ▾' : ''}
           </Text>
         </Pressable>
-        <View style={{ width: 40 }} />
       </View>
 
       {/* Big amount entry */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: space.xxl }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: space.xl }}>
         <Text style={{ fontSize: 40, fontWeight: '700', color: onDeepMuted, marginRight: space.xs }}>
           {group ? currencySymbol(group.currency) : ''}
         </Text>
@@ -423,7 +428,7 @@ export default function ExpenseFormScreen() {
   );
 
   return (
-    <HeroScreen header={header}>
+    <HeroScreen nav="close" title={title} card={card}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <Gutter>
@@ -431,7 +436,7 @@ export default function ExpenseFormScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityHint="Change who paid and how it's split"
-          onPress={() => setSheet('split')}
+          onPress={() => void openSheet('split')}
           android_ripple={{ color: c.surfaceAlt }}
           style={{
             flexDirection: 'row',
@@ -514,7 +519,14 @@ export default function ExpenseFormScreen() {
               return (
                 <View key={id}>
                   {i > 0 ? <Divider /> : null}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, opacity: on ? 1 : 0.55 }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: space.md,
+                      paddingVertical: space.md,
+                      opacity: on ? 1 : 0.55,
+                    }}>
                     <Tick on={on} label={name(id)} onPress={() => setIncluded((s) => ({ ...s, [id]: !on }))} />
                     <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
                       {id === myId ? 'You' : name(id)}

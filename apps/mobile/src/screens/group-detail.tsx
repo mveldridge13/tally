@@ -1,13 +1,12 @@
 import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActivityList } from '@/components/activity-list';
 import { ContactNameField, type ContactReach } from '@/components/contact-name-field';
-import { Gutter, HeroIconButton, HeroScreen, HeroNav, onDeepMuted, SectionTitle } from '@/components/dashboard';
-import { balanceSentence, FloatingButton, GROUP_ICONS, GroupIcon, MenuRow, Sheet } from '@/components/friendly';
+import { CardFigure, Gutter, HeaderMenuButton, HeroScreen, QuickAction, SectionTitle, StatRow, TotalPill } from '@/components/dashboard';
+import { balanceSentence, GROUP_ICONS, GroupIcon, MenuRow, Sheet } from '@/components/friendly';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
@@ -25,31 +24,11 @@ import { firstName } from '@/lib/format';
 import { sendInvite, type InviteChannel } from '@/lib/invite';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 import { soleOther, useGroupSummary } from '@/store/hooks';
-import { PRESS_DELAY, balanceColor, brand, groupColor, radius, space, useColors } from '@/theme';
+import { PRESS_DELAY, balanceColor, groupColor, radius, space, useColors } from '@/theme';
 
 type SheetName = 'people' | 'menu' | 'icon' | null;
 
 /** Round translucent ⋯ button for the header, matching the back button. */
-function MoreButton({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="More options"
-      onPress={onPress}
-      hitSlop={12}
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      <Text style={{ color: brand.onDeep, fontSize: 20, fontWeight: '700', lineHeight: 22 }}>⋯</Text>
-    </Pressable>
-  );
-}
-
 /**
  * Group details: one sentence about where you stand, the people, and the expenses.
  * Adding people and the rarer actions (invite, icon, leave, delete) live in sheets.
@@ -58,7 +37,6 @@ function MoreButton({ onPress }: { onPress: () => void }) {
  */
 export function GroupDetail({ id, embedded = false, onGone }: { id: string; embedded?: boolean; onGone?: () => void }) {
   const c = useColors();
-  const insets = useSafeAreaInsets();
   const { data, isLoading, refetch } = useTallyData();
   const pull = usePullToRefresh(refetch);
   const summary = useGroupSummary(id);
@@ -78,18 +56,9 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const { data: partners } = useSplitPartners();
   const picked = useSelection();
 
-  const totals = useMemo(() => {
-    const expenses = data.expenses.filter((e) => e.groupId === id);
-    return {
-      spent: expenses.reduce((sum, e) => sum + e.amount, 0),
-      myShare: expenses.reduce((sum, e) => sum + (e.splits.find((s) => s.userId === myId)?.amount ?? 0), 0),
-      count: expenses.length,
-    };
-  }, [data.expenses, id, myId]);
-
   if (!summary) {
     return (
-      <HeroScreen variant={embedded ? 'card' : 'full'} header={<HeroNav mode={embedded ? 'none' : 'back'} title="Group" />}>
+      <HeroScreen variant={embedded ? 'card' : 'full'} nav={embedded ? 'none' : 'back'} title="Group">
         <Gutter>
           <Notice tone="info">{isLoading ? 'Loading…' : 'This group no longer exists, or you’re no longer a member.'}</Notice>
         </Gutter>
@@ -197,48 +166,50 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
     ]);
   }
 
-  const header = (
+  const card = (
     <>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 40 }}>
-        {embedded ? <View /> : <HeroIconButton icon="back" />}
-        <MoreButton onPress={() => setSheet('menu')} />
-      </View>
-      <View style={{ alignItems: 'center', gap: space.sm, marginTop: space.sm }}>
-        <GroupIcon group={group} size={64} />
-        <Text variant="title" color={brand.onDeep} numberOfLines={1} style={{ marginTop: space.xs }}>
-          {group.name}
-        </Text>
-        <Text variant="heading" color={brand.onDeep} style={{ fontSize: 19, fontWeight: '500', textAlign: 'center' }}>
-          {balanceSentence(myBalance, group.currency, other ? name(other) : undefined)}
-        </Text>
-        {myTransfer ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => settle(myTransfer.fromUserId, myTransfer.toUserId, myTransfer.amount)}
-            style={({ pressed }) => ({
-              marginTop: space.sm,
-              backgroundColor: brand.accent,
-              borderRadius: radius.pill,
-              paddingHorizontal: space.xl,
-              paddingVertical: space.md,
-              opacity: pressed ? 0.85 : 1,
-            })}>
-            <Text variant="label" color={brand.onAccent} style={{ fontSize: 15 }}>
-              Settle up
-            </Text>
-          </Pressable>
-        ) : (
-          <Text variant="caption" color={onDeepMuted}>
-            {group.memberIds.length} {group.memberIds.length === 1 ? 'person' : 'people'} · {group.currency}
-          </Text>
-        )}
-      </View>
+      <CardFigure
+        label="Your balance"
+        value={`${myBalance > 0 ? '+' : myBalance < 0 ? '−' : ''}${money(myBalance)}`}
+        note={balanceSentence(myBalance, group.currency, other ? name(other) : undefined)}
+      />
+      <StatRow>
+        <TotalPill label="Group spending" cents={summary.totalSpent ?? 0} currency={group.currency} tone="neutral" />
+        <TotalPill label="Your share" cents={summary.myShare} currency={group.currency} tone="neutral" />
+      </StatRow>
     </>
   );
 
   return (
     <View style={{ flex: 1 }}>
-      <HeroScreen variant={embedded ? 'card' : 'full'} header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
+      <HeroScreen
+        variant={embedded ? 'card' : 'full'}
+        nav={embedded ? 'none' : 'back'}
+        title={group.name}
+        subtitle={`${group.memberIds.length} ${group.memberIds.length === 1 ? 'person' : 'people'} · ${group.currency}`}
+        leading={<GroupIcon group={group} size={52} />}
+        right={<HeaderMenuButton onPress={() => setSheet('menu')} />}
+        actions={
+          <>
+            <QuickAction
+              bold
+              icon="add-circle-outline"
+              label="Add expense"
+              onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } })}
+            />
+            <QuickAction
+              bold
+              icon="handshake"
+              label="Settle up"
+              disabled={!myTransfer}
+              onPress={() => myTransfer && settle(myTransfer.fromUserId, myTransfer.toUserId, myTransfer.amount)}
+            />
+          </>
+        }
+        card={card}
+        cardTone="light"
+        refreshing={pull.refreshing}
+        onRefresh={pull.onRefresh}>
         {inviteError ? (
           <Gutter>
             <Notice>{inviteError}</Notice>
@@ -248,7 +219,10 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
         {/* People: a row of faces with each person's balance; + opens Add people. */}
         <View style={{ gap: space.md }}>
           <SectionTitle title="People" />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.lg }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.lg }}>
             {group.memberIds.map((uid) => {
               const bal = balances.get(uid) ?? 0;
               const isMe = uid === myId;
@@ -261,7 +235,10 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
                   onPress={() => openBreakdown(isMe ? undefined : uid)}
                   unstable_pressDelay={PRESS_DELAY}
                   style={({ pressed }) => ({ alignItems: 'center', gap: 4, width: 68, opacity: pressed ? 0.7 : 1 })}>
-                  <View style={guest ? { borderRadius: 30, borderWidth: 2, borderStyle: 'dashed', borderColor: c.border, padding: 2 } : undefined}>
+                  <View
+                    style={
+                      guest ? { borderRadius: 30, borderWidth: 2, borderStyle: 'dashed', borderColor: c.border, padding: 2 } : undefined
+                    }>
                     <Avatar name={name(uid)} size={52} color={groupColor(uid)} />
                   </View>
                   <Text variant="label" numberOfLines={1}>
@@ -336,28 +313,19 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
         <View style={{ gap: space.md }}>
           <View style={{ gap: 2 }}>
             <SectionTitle title="Expenses" />
-            {totals.count > 0 ? (
+            {summary.isOwner ? null : (
               <Gutter>
                 <Text variant="caption" muted>
-                  {money(totals.spent)} spent · your share {money(totals.myShare)}
+                  Only items you added are shown. The owner sees everything.
                 </Text>
               </Gutter>
-            ) : null}
+            )}
           </View>
           <Gutter>
             <ActivityList groupId={group.id} emptyText="Nothing here yet. Tap Add expense to log the first one." />
           </Gutter>
         </View>
-
-        {/* Room so the last expense isn't hidden behind the floating button. */}
-        <View style={{ height: 72 }} />
       </HeroScreen>
-
-      <FloatingButton
-        label="Add expense"
-        bottom={embedded ? 0 : insets.bottom}
-        onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } })}
-      />
 
       {/* Add people: people you split with, an invite link, or someone by name. */}
       <Sheet
@@ -427,7 +395,11 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
           />
         </Card>
         <Card style={{ paddingVertical: 0 }}>
-          {isOwner ? <MenuRow label="Delete group" danger onPress={confirmDelete} /> : <MenuRow label="Leave group" danger onPress={confirmLeave} />}
+          {isOwner ? (
+            <MenuRow label="Delete group" danger onPress={confirmDelete} />
+          ) : (
+            <MenuRow label="Leave group" danger onPress={confirmLeave} />
+          )}
         </Card>
         {isOwner ? (
           <Text variant="caption" muted>

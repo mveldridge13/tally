@@ -1,20 +1,22 @@
 /**
- * Shared building blocks for the tab "dashboard" screens (Home, Groups, …):
- * navy hero header, overlapping light sheet, totals pills, section titles and group cards.
+ * Shared building blocks for every screen: the light header, the dark summary card with its
+ * figures, action tiles, section titles and group cards.
  * Everything here takes its colours from the theme so the screens stay consistent.
  */
 import { formatMoney, type Cents } from '@tally/shared';
-import { router } from 'expo-router';
-import { type ReactNode } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { router, useFocusEffect } from 'expo-router';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { Children, createContext, useCallback, useContext, useMemo, type ComponentProps, type ReactNode } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, useColorScheme, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { GroupSummary } from '@/lib/data';
+import { netByCurrency, type GroupSummary } from '@/lib/data';
 import { relativeTime } from '@/lib/format';
 import { PRESS_DELAY, balanceColor, brand, radius, space, useColors } from '@/theme';
-import { CONTENT_MAX_WIDTH } from '@/lib/layout';
-import { HeroGlow } from './brand';
+import { CONTENT_MAX_WIDTH, useWidthClass } from '@/lib/layout';
+import { HeroGlow, Wordmark } from './brand';
 import { GroupIcon } from './friendly';
 import { Text } from './ui';
 
@@ -23,259 +25,459 @@ export const onDeepMuted = brand.onDeepMuted;
 /** "You owe" accent on navy. */
 export const oweOnDeep = brand.oweOnDeep;
 
-/** Scrollable screen: navy header on top, light rounded sheet overlapping it below. */
+type NavMode = 'tab' | 'back' | 'close' | 'none';
+
+/**
+ * Every screen's layout: a light header that stays put (logo on tabs, ‹ on pushed screens, ✕ on
+ * forms; then a small label, the title and a short line), with everything below it scrolling.
+ * `card` is the screen's dark summary card, the first thing in the scrolling area; anything in it
+ * is drawn on sage, so use white text (brand.onDeep / onDeepMuted).
+ */
 export function HeroScreen({
-  header,
+  nav,
+  eyebrow,
+  title,
+  subtitle,
+  leading,
+  right,
+  card,
+  actions,
+  cardTone = 'dark',
   children,
   refreshing,
   onRefresh,
   variant = 'full',
   fullWidth = false,
 }: {
-  header: ReactNode;
-  children: ReactNode;
+  nav: NavMode;
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  /** Beside the title, on the left (a group's icon). */
+  leading?: ReactNode;
+  /** Top-right corner (avatar, ⋯ menu). */
+  right?: ReactNode;
+  card?: ReactNode;
+  /** QuickAction tiles (pass them bold). Shown under a "Quick actions" heading, above the card. */
+  actions?: ReactNode;
+  /** `light` when the screen has actions, so the bold tiles stand out (Home's pattern). */
+  cardTone?: CardTone;
+  children?: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
-  /** `card`: shown in a column beside a list when unfolded; the navy header becomes a rounded card on the light page. */
+  /** `card`: shown in a pane beside a list when unfolded (no status-bar padding). */
   variant?: 'full' | 'card';
-  /** Use the whole width on wide screens instead of a centred column (Home when unfolded). */
+  /** Use the whole width on wide screens instead of a centred column. */
   fullWidth?: boolean;
 }) {
   const c = useColors();
+  const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  if (variant === 'card') {
-    return (
-      <KeyboardAwareScrollView
-        bottomOffset={space.xl}
-        style={{ flex: 1, backgroundColor: c.bg }}
-        contentContainerStyle={{ paddingTop: space.lg, paddingBottom: insets.bottom + space.xxl, gap: space.xl }}
-        keyboardShouldPersistTaps="handled">
-        <View
-          style={{
-            marginHorizontal: space.lg,
-            backgroundColor: brand.deep,
-            borderRadius: radius.xl,
-            padding: space.xl,
-            overflow: 'hidden',
-          }}>
-          <HeroGlow />
-          {header}
-        </View>
-        {children}
-      </KeyboardAwareScrollView>
-    );
-  }
+  const rail = useWidthClass() === 'expanded';
+  const column = { width: '100%', maxWidth: fullWidth ? undefined : CONTENT_MAX_WIDTH, alignSelf: 'center' } as const;
+
+  // Dark status-bar icons on the light header (the sign-in screens switch them back to white).
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle(scheme === 'dark' ? 'light' : 'dark');
+    }, [scheme]),
+  );
+
+  // Above the bottom tab bar, the bar already clears the phone's navigation area, so the page
+  // doesn't leave room for it again. (Sheets and other screens still use the full inset.)
+  const bottomInset = nav === 'tab' && !rail ? 0 : insets.bottom;
+
+  // The logo row shows on the tabs, except when unfolded: the side rail already carries the logo.
+  const showLogo = nav === 'tab' && !rail;
+  const topRow = showLogo || nav === 'back' || nav === 'close' || right;
+
   return (
-    <KeyboardAwareScrollView
-      bottomOffset={space.xl}
-      // Navy, not the page colour: during a fast fling Android can skip drawing the header for a
-      // frame once it has scrolled off-screen, and a light background flashed as a grey bar at the top.
-      style={{ flex: 1, backgroundColor: brand.deep }}
-      contentContainerStyle={{ flexGrow: 1 }}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} colors={[c.primary]} progressViewOffset={insets.top} />
-        ) : undefined
-      }>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
       <View
         style={{
-          backgroundColor: brand.deep,
-          paddingTop: insets.top + space.lg,
-          paddingHorizontal: space.xl,
-          paddingBottom: space.xxl + space.xl,
-          overflow: 'hidden',
+          paddingTop: (variant === 'card' ? 0 : insets.top) + space.md,
+          paddingHorizontal: space.lg,
+          paddingBottom: space.lg,
         }}>
-        <HeroGlow />
-        {/* Centred and capped on wide screens (unfolded foldables) so nothing stretches edge to edge. */}
-        <View style={{ width: '100%', maxWidth: fullWidth ? undefined : CONTENT_MAX_WIDTH, alignSelf: 'center' }}>{header}</View>
+        <View style={[column, { gap: space.md }]}>
+          {topRow ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+              {showLogo ? (
+                <Wordmark size={24} color={c.primary} markColor={c.primary} />
+              ) : nav === 'back' ? (
+                <HeroIconButton icon="back" />
+              ) : (
+                <View />
+              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                {right}
+                {nav === 'close' ? <HeroIconButton icon="close" /> : null}
+              </View>
+            </View>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            {leading}
+            <View style={{ flex: 1, gap: 2 }}>
+              {eyebrow ? (
+                <Text variant="label" muted numberOfLines={1}>
+                  {eyebrow}
+                </Text>
+              ) : null}
+              <Text variant="title" color={c.primary} numberOfLines={2} style={{ fontSize: 28, lineHeight: 34 }}>
+                {title}
+              </Text>
+              {subtitle ? (
+                <Text variant="body" muted numberOfLines={2}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
       </View>
-      <View
-        style={{
-          // Grows to the bottom of the screen on short pages, so the navy background never shows below it.
-          flexGrow: 1,
-          marginTop: -space.xl,
-          backgroundColor: c.bg,
-          borderTopLeftRadius: radius.xl,
-          borderTopRightRadius: radius.xl,
-          paddingTop: space.xl,
-          paddingBottom: insets.bottom + space.xxl,
-        }}>
-        <View style={{ width: '100%', maxWidth: fullWidth ? undefined : CONTENT_MAX_WIDTH, alignSelf: 'center', gap: space.xl }}>
+
+      <KeyboardAwareScrollView
+        showsVerticalScrollIndicator={false}
+        bottomOffset={space.xl}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: space.xs, paddingBottom: bottomInset + space.xl }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} colors={[c.primary]} /> : undefined}>
+        <View style={[column, { gap: space.xl }]}>
+          {actions ? (
+            <View style={{ gap: space.md }}>
+              <SectionTitle title="Quick actions" />
+              <ActionRow>{actions}</ActionRow>
+            </View>
+          ) : null}
+          {card ? <SummaryCard tone={cardTone}>{card}</SummaryCard> : null}
           {children}
         </View>
-      </View>
-    </KeyboardAwareScrollView>
+      </KeyboardAwareScrollView>
+    </View>
   );
 }
 
-/** Round translucent button for the navy header (back ‹ or close ✕). */
+/** The dark sage card at the top of every screen's content: the screen's key numbers or main input. */
+/**
+ * `light`: a lighter shade of the sage tiles with dark text, for a screen where the tiles should catch the eye first
+ * (Home, where the bold action tiles lead). CardFigure, StatRow and TotalPill follow the tone.
+ */
+export function SummaryCard({ children, tone = 'dark' }: { children: ReactNode; tone?: CardTone }) {
+  const c = useColors();
+  const scheme = useColorScheme();
+  return (
+    <CardToneContext.Provider value={tone}>
+      <View
+        style={{
+          marginHorizontal: space.lg,
+          backgroundColor: tone === 'dark' ? brand.deep : scheme === 'dark' ? c.surfaceAlt : brand.sageLight,
+          borderRadius: radius.xl,
+          paddingVertical: space.lg,
+          paddingHorizontal: space.xl,
+          overflow: 'hidden',
+        }}>
+        {tone === 'dark' ? <HeroGlow /> : <HeroGlow color="#FFFFFF" strength={2.5} />}
+        {children}
+      </View>
+    </CardToneContext.Provider>
+  );
+}
+
+type CardTone = 'dark' | 'light';
+const CardToneContext = createContext<CardTone>('dark');
+
+/** Text colours for whatever summary card this sits in. */
+export function useCardInk() {
+  const c = useColors();
+  const scheme = useColorScheme();
+  return useContext(CardToneContext) === 'dark'
+    ? {
+        text: brand.onDeep,
+        muted: onDeepMuted,
+        owed: brand.accent,
+        owe: oweOnDeep,
+        line: 'rgba(255,255,255,0.25)',
+        select: 'rgba(255,255,255,0.18)',
+        press: 'rgba(255,255,255,0.1)',
+      }
+    : scheme === 'dark'
+      ? { text: c.text, muted: c.textMuted, owed: c.owed, owe: c.owe, line: c.border, select: c.border, press: c.surface }
+      : // On the lighter sage: very dark text and money colours, all at least 5:1 contrast.
+        {
+          text: '#1B2A22',
+          muted: '#2B3D33',
+          owed: '#0A4429',
+          owe: '#6E1F1A',
+          line: 'rgba(27,42,34,0.3)',
+          select: 'rgba(255,255,255,0.55)',
+          press: 'rgba(255,255,255,0.3)',
+        };
+}
+
+/** Text inside a summary card, coloured for the card's tone (white on dark, dark on light). */
+export function CardText({
+  muted,
+  variant = 'body',
+  style,
+  children,
+}: {
+  muted?: boolean;
+  variant?: ComponentProps<typeof Text>['variant'];
+  style?: ComponentProps<typeof Text>['style'];
+  children: ReactNode;
+}) {
+  const ink = useCardInk();
+  return (
+    <Text variant={variant} color={muted ? ink.muted : ink.text} style={style}>
+      {children}
+    </Text>
+  );
+}
+
+/** Round back ‹ or close ✕ button for the light header. */
 export function HeroIconButton({ icon, label, onPress }: { icon: 'back' | 'close'; label?: string; onPress?: () => void }) {
+  const c = useColors();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label ?? (icon === 'back' ? 'Back' : 'Close')}
       onPress={onPress ?? (() => router.back())}
       hitSlop={12}
-      style={{
+      style={({ pressed }) => ({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: c.surfaceAlt,
         alignItems: 'center',
         justifyContent: 'center',
-      }}>
-      {icon === 'back' ? (
-        <Text
-          style={{
-            color: brand.onDeep,
-            fontSize: 26,
-            lineHeight: 28,
-            marginTop: -2,
-          }}>
-          ‹
-        </Text>
-      ) : (
-        <Text style={{ color: brand.onDeep, fontSize: 18, fontWeight: '600' }}>✕</Text>
-      )}
+        opacity: pressed ? 0.7 : 1,
+      })}>
+      <MaterialIcons name={icon === 'back' ? 'arrow-back' : 'close'} size={22} color={c.text} />
     </Pressable>
+  );
+}
+
+/** Round ⋯ button for the header's top-right corner. */
+export function HeaderMenuButton({ onPress }: { onPress: () => void }) {
+  const c = useColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="More options"
+      onPress={onPress}
+      hitSlop={12}
+      style={({ pressed }) => ({
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: c.surfaceAlt,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.7 : 1,
+      })}>
+      <MaterialIcons name="more-horiz" size={22} color={c.text} />
+    </Pressable>
+  );
+}
+
+/** Big number inside a summary card, with an optional label above and a line below. */
+export function CardFigure({ label, value, note, noteColor }: { label?: string; value: string; note?: string; noteColor?: string }) {
+  const ink = useCardInk();
+  return (
+    <View style={{ gap: 2 }}>
+      {label ? (
+        <Text variant="label" color={ink.muted}>
+          {label}
+        </Text>
+      ) : null}
+      <Text
+        style={{ fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.8, color: ink.text, fontVariant: ['tabular-nums'] }}
+        numberOfLines={1}
+        adjustsFontSizeToFit>
+        {value}
+      </Text>
+      {note ? (
+        <Text variant="caption" color={noteColor ?? ink.muted} style={{ fontSize: 14 }}>
+          {note}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
 /**
- * Top row of a pushed or modal navy screen. `back` puts ‹ on the left (pushed screens);
- * `close` puts ✕ on the right (modals); `none` shows neither (a screen shown inside a pane).
- * `leading` sits between the back button and the titles.
+ * Your overall position across groups: the currency with the biggest balance leads, any others are
+ * listed quietly after it; owed/owe are the totals in that leading currency.
  */
-export function HeroNav({
-  mode,
-  eyebrow,
-  title,
-  leading,
-}: {
-  mode: 'back' | 'close' | 'none';
-  eyebrow?: string;
-  title: string;
-  leading?: ReactNode;
-}) {
+export function usePosition(summaries: GroupSummary[]) {
+  return useMemo(() => {
+    const totals = netByCurrency(summaries);
+    const main = [...totals].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
+    const primary = main ?? { currency: 'USD', amount: 0 };
+    const inPrimary = summaries.filter((s) => s.group.currency === primary.currency);
+    return {
+      primary,
+      others: totals.filter((t) => t !== main),
+      owedTotal: inPrimary.reduce((sum, s) => sum + Math.max(0, s.myBalance), 0),
+      oweTotal: inPrimary.reduce((sum, s) => sum + Math.max(0, -s.myBalance), 0),
+    };
+  }, [summaries]);
+}
+
+/** "Your total position" figure, shared by Home and Groups so they always agree. */
+export function PositionFigure({ summaries }: { summaries: GroupSummary[] }) {
+  const { primary, others } = usePosition(summaries);
+  const where = summaries.length === 1 ? 'in your group' : `across ${summaries.length} groups`;
+  const sign = primary.amount > 0 ? '+' : primary.amount < 0 ? '−' : '';
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-      {mode === 'back' ? <HeroIconButton icon="back" /> : null}
-      {leading}
-      <View style={{ flex: 1 }}>
-        {eyebrow ? (
-          <Text variant="caption" color={onDeepMuted} numberOfLines={1}>
-            {eyebrow}
-          </Text>
-        ) : null}
-        <Text variant="title" color={brand.onDeep} numberOfLines={1}>
-          {title}
-        </Text>
-      </View>
-      {mode === 'close' ? <HeroIconButton icon="close" /> : null}
-    </View>
+    <CardFigure
+      label="Your total position"
+      value={`${sign}${formatMoney(Math.abs(primary.amount), primary.currency)}`}
+      note={
+        (primary.amount === 0 ? 'You’re all square' : primary.amount > 0 ? `You’re owed ${where}` : `You owe ${where}`) +
+        (others.length > 0
+          ? ` · also ${others.map((o) => `${o.amount >= 0 ? '+' : '−'}${formatMoney(Math.abs(o.amount), o.currency)}`).join(', ')}`
+          : '')
+      }
+    />
   );
 }
 
-/** Small label + large title used at the top of a hero header. */
-export function HeroTitle({ eyebrow, title, right }: { eyebrow: string; title: string; right?: ReactNode }) {
+/** The divided row of figures along the bottom of a summary card. Children are TotalPills. */
+export function StatRow({ children }: { children: ReactNode }) {
+  const items = Children.toArray(children);
+  const ink = useCardInk();
   return (
     <View
       style={{
         flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        marginTop: space.md,
+        paddingTop: space.md,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: ink.line,
       }}>
-      <View style={{ flexShrink: 1 }}>
-        <Text variant="body" color={onDeepMuted}>
-          {eyebrow}
-        </Text>
-        <Text variant="title" color={brand.onDeep} numberOfLines={1}>
-          {title}
-        </Text>
-      </View>
-      {right}
+      {items.map((child, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            paddingLeft: i === 0 ? 0 : space.md,
+            borderLeftWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
+            borderLeftColor: ink.line,
+          }}>
+          {child}
+        </View>
+      ))}
     </View>
   );
 }
 
-export function QuickAction({ icon, label, onPress, primary }: { icon: string; label: string; onPress: () => void; primary?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flex: 1,
-        alignItems: 'center',
-        gap: space.sm,
-        opacity: pressed ? 0.7 : 1,
-      })}>
-      <View
-        style={{
-          width: 56,
-          height: 56,
-          borderRadius: radius.lg,
-          backgroundColor: primary ? brand.accent : 'rgba(255,255,255,0.1)',
-          borderWidth: primary ? 0 : 1,
-          borderColor: 'rgba(255,255,255,0.14)',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        <Text
-          style={{
-            fontSize: 24,
-            fontWeight: '600',
-            color: primary ? brand.onAccent : brand.onDeep,
-            lineHeight: 28,
-          }}>
-          {icon}
-        </Text>
-      </View>
-      <Text variant="caption" color={brand.onDeep} style={{ fontWeight: '600' }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/** Glassy stat pill on the navy header. Pass `cents` for money or `value` for plain text. */
+/** One figure in a StatRow. Pass `cents` for money or `value` for plain text. */
 export function TotalPill({
   label,
   cents,
   currency,
   value,
   tone,
+  onPress,
+  selected,
 }: {
   label: string;
   cents?: Cents;
   currency?: string;
   value?: string;
   tone: 'owed' | 'owe' | 'neutral';
+  /** Makes the figure a button (Groups: tap a figure to filter the list by it). */
+  onPress?: () => void;
+  selected?: boolean;
 }) {
-  const dot = tone === 'owed' ? brand.accent : tone === 'owe' ? oweOnDeep : onDeepMuted;
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: 'rgba(255,255,255,0.07)',
-        borderColor: 'rgba(255,255,255,0.12)',
-        borderWidth: 1,
-        borderRadius: radius.md,
-        paddingVertical: space.md,
-        paddingHorizontal: space.md,
-        gap: 2,
-      }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
-        <Text variant="caption" color={onDeepMuted} numberOfLines={1}>
-          {label}
-        </Text>
-      </View>
-      <Text variant="heading" color={brand.onDeep} style={{ fontVariant: ['tabular-nums'] }} numberOfLines={1}>
+  const ink = useCardInk();
+  const color = tone === 'owed' ? ink.owed : tone === 'owe' ? ink.owe : ink.text;
+  const content = (
+    <>
+      <Text variant="caption" color={tone === 'owe' ? ink.owe : ink.muted} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text
+        variant="heading"
+        color={color}
+        style={{ fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }}
+        numberOfLines={1}
+        adjustsFontSizeToFit>
         {value ?? formatMoney(cents ?? 0, currency ?? 'USD')}
       </Text>
-    </View>
+    </>
+  );
+  if (!onPress) return <View style={{ gap: 2 }}>{content}</View>;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={`${label}: ${value ?? ''}. ${selected ? 'Showing these. Tap to show all' : 'Tap to show only these'}`}
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        gap: 2,
+        // The highlight stays inside its own column, clear of the dividers either side.
+        marginRight: space.sm,
+        paddingHorizontal: space.sm,
+        paddingVertical: space.xs,
+        borderRadius: radius.md,
+        backgroundColor: selected ? ink.select : pressed ? ink.press : 'transparent',
+      })}>
+      {content}
+    </Pressable>
+  );
+}
+
+type IconName = ComponentProps<typeof MaterialIcons>['name'];
+
+/** A row of pale sage action tiles under the summary card. Children are QuickActions. */
+export function ActionRow({ children }: { children: ReactNode }) {
+  return <View style={{ flexDirection: 'row', gap: space.md, paddingHorizontal: space.lg }}>{children}</View>;
+}
+
+/** `bold`: solid sage with white text, for the main actions on a screen (Home). */
+export function QuickAction({
+  icon,
+  label,
+  onPress,
+  danger,
+  bold,
+  disabled,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+  bold?: boolean;
+  /** Dimmed and untappable (e.g. Settle up when everyone's square). */
+  disabled?: boolean;
+}) {
+  const c = useColors();
+  const color = bold ? brand.onDeep : danger ? c.owe : c.primary;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityState={{ disabled: !!disabled }}
+      style={({ pressed }) => ({
+        flex: 1,
+        alignItems: 'center',
+        gap: space.xs,
+        paddingVertical: bold ? space.lg : space.md,
+        borderRadius: radius.lg,
+        backgroundColor: bold ? (danger ? c.owe : brand.deep) : c.surfaceAlt,
+        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+      })}>
+      <MaterialIcons name={icon} size={bold ? 28 : 24} color={color} />
+      <Text variant="label" color={color} numberOfLines={1}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -496,32 +698,5 @@ export function FilterChips<T extends string>({
         );
       })}
     </ScrollView>
-  );
-}
-
-/** Compact pill action for wide (unfolded) headers ("+ Add expense"). */
-export function BandAction({ icon, label, onPress, primary }: { icon: string; label: string; onPress: () => void; primary?: boolean }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => ({
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: space.sm,
-        height: 44,
-        paddingHorizontal: space.lg,
-        borderRadius: radius.pill,
-        backgroundColor: primary ? brand.accent : 'rgba(255,255,255,0.1)',
-        borderWidth: primary ? 0 : 1,
-        borderColor: 'rgba(255,255,255,0.16)',
-        opacity: pressed ? 0.75 : 1,
-      })}>
-      <Text style={{ fontSize: 18, fontWeight: '700', color: primary ? brand.onAccent : brand.onDeep }}>{icon}</Text>
-      <Text variant="label" color={primary ? brand.onAccent : brand.onDeep}>
-        {label}
-      </Text>
-    </Pressable>
   );
 }

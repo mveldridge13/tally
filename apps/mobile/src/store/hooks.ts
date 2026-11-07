@@ -6,7 +6,7 @@ import { summarizeGroup, useTallyData, type GroupSummary } from '@/lib/data';
 export function useGroupSummaries(): GroupSummary[] {
   const myId = useMyId();
   const { data } = useTallyData();
-  return useMemo(() => data.groups.map((g) => summarizeGroup(g, data.expenses, data.settlements, myId)), [data, myId]);
+  return useMemo(() => data.groups.map((g) => summarizeGroup(g, data.ledgers[g.id], myId)), [data, myId]);
 }
 
 /** The one person you owe or who owes you in a group, when there's exactly one. */

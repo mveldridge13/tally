@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HeroGlow, Wordmark } from '@/components/brand';
+import { HeroGlow, useLightStatusBar, Wordmark } from '@/components/brand';
 import { Button, LinkButton, Text } from '@/components/ui';
 import { savePendingInvite, usePendingInvite } from '@/lib/pending-invite';
 import { brand, radius, space } from '@/theme';
@@ -88,6 +88,7 @@ function PreviewCard() {
 
 export default function WelcomeScreen() {
   const pending = usePendingInvite((state) => state.token);
+  useLightStatusBar();
   const [codeOpen, setCodeOpen] = useState(false);
   const [code, setCode] = useState('');
   // Save the code, then sign up; after sign-up Tally joins the group automatically.

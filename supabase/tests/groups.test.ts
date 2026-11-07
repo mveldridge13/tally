@@ -127,8 +127,11 @@ describe('Membership: leave, remove, transfer ownership', () => {
 
   it('keeps history when someone rejoins', async () => {
     await join(sam);
-    const { data } = await sam.client.from('expenses').select('description').eq('group_id', groupId);
+    // The owner still sees the old expense; Sam (a member) sees their share of it via the server.
+    const { data } = await owner.client.from('expenses').select('description').eq('group_id', groupId);
     expect(data).toEqual([{ description: 'Groceries' }]);
+    const { data: mine } = await sam.client.rpc('my_group_summaries');
+    expect((mine as { group_id: string; my_share: number }[]).find((g) => g.group_id === groupId)?.my_share).toBe(1500);
   });
 
   it('transfers ownership so the old owner can leave', async () => {

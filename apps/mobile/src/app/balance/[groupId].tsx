@@ -3,7 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, oweOnDeep, SectionTitle } from '@/components/dashboard';
+import { CardFigure, Gutter, HeroScreen, onDeepMuted, oweOnDeep, SectionTitle } from '@/components/dashboard';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { PayIdCard } from '@/components/payid-card';
@@ -46,12 +46,19 @@ export default function BalanceBreakdownScreen() {
     return [...ids];
   }, [summary, expenses, settlements, myId]);
 
+  // Members only see their own items, so what's between you and each person comes from the
+  // server's balances (positive there = you owe them); the owner sees every item and adds them up.
+  const isOwner = !!summary?.isOwner;
+  const serverPair = (id: string): Cents => -(summary?.balances.get(id) ?? 0);
+
   const perPerson = useMemo(
     () =>
       others
-        .map((id) => ({ id, total: pairBreakdown(myId, id, expenses, settlements).total }))
+        .map((id) => ({ id, total: isOwner ? pairBreakdown(myId, id, expenses, settlements).total : serverPair(id) }))
         .sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
-    [others, myId, expenses, settlements],
+    // serverPair reads summary, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [others, myId, expenses, settlements, isOwner, summary],
   );
 
   const pair = useMemo(() => {
@@ -76,12 +83,13 @@ export default function BalanceBreakdownScreen() {
         return { key: x.id, kind: e.kind, id: x.id, at: x.occurredAt, amount: e.amount, title: '', payerId: x.fromUserId, total: x.amount };
       })
       .sort((a, b) => (a.at < b.at ? 1 : -1));
-    return { rows, total };
-  }, [otherId, myId, expenses, settlements]);
+    return { rows, total: isOwner ? total : serverPair(otherId) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otherId, myId, expenses, settlements, isOwner, summary]);
 
   if (!summary) {
     return (
-      <HeroScreen header={<HeroNav mode="back" title="Balance" />}>
+      <HeroScreen nav="back" title="Balance">
         <Stack.Screen options={{ headerShown: false }} />
         <Gutter>
           <Notice tone="info">{isLoading ? 'Loading…' : 'This group no longer exists, or you’re no longer a member.'}</Notice>
@@ -99,40 +107,28 @@ export default function BalanceBreakdownScreen() {
     total > 0 ? `${name(id)} owes you` : total < 0 ? `You owe ${name(id)}` : `You and ${name(id)} are settled up`;
 
   const headerAmount = otherId ? (pair?.total ?? 0) : myBalance;
-  const header = (
-    <>
-      <HeroNav
-        mode="back"
-        eyebrow={group.name}
-        title={otherId ? `You and ${they}` : 'Your balance'}
-        leading={
-          otherId ? (
-            <Avatar name={they} size={44} color={brand.tintOnDeep} />
-          ) : (
-            <Avatar name={group.name} color={groupColor(group.id)} square size={44} />
-          )
-        }
-      />
-      <View style={{ marginTop: space.xl, gap: space.xs }}>
-        <Text variant="label" color={onDeepMuted}>
-          {otherId ? 'Between you two' : 'In this group'}
-        </Text>
-        <Text style={{ fontSize: 44, fontWeight: '800', letterSpacing: -1, color: brand.onDeep, fontVariant: ['tabular-nums'] }}>
-          {headerAmount > 0 ? '+' : headerAmount < 0 ? '−' : ''}
-          {money(headerAmount)}
-        </Text>
-        <Text variant="body" color={headerAmount === 0 ? onDeepMuted : headerAmount > 0 ? brand.accent : oweOnDeep}>
-          {otherId
-            ? pairSentence(otherId, headerAmount)
-            : headerAmount === 0
-              ? 'You’re settled up in this group'
-              : headerAmount > 0
-                ? 'You’re owed in this group'
-                : 'You owe in this group'}
-        </Text>
-      </View>
-    </>
+  const card = (
+    <CardFigure
+      label={otherId ? 'Between you two' : 'In this group'}
+      value={`${headerAmount > 0 ? '+' : headerAmount < 0 ? '−' : ''}${money(headerAmount)}`}
+      note={
+        otherId
+          ? pairSentence(otherId, headerAmount)
+          : headerAmount === 0
+            ? 'You’re settled up in this group'
+            : headerAmount > 0
+              ? 'You’re owed in this group'
+              : 'You owe in this group'
+      }
+      noteColor={headerAmount === 0 ? onDeepMuted : headerAmount > 0 ? brand.accent : oweOnDeep}
+    />
   );
+  const heroProps = {
+    nav: 'back' as const,
+    eyebrow: group.name,
+    title: otherId ? `You and ${they}` : 'Your balance',
+    card,
+  };
 
   // ─── You and one person ──────────────────────────────────────────────────
   if (otherId && pair) {
@@ -182,7 +178,7 @@ export default function BalanceBreakdownScreen() {
     };
 
     return (
-      <HeroScreen header={header}>
+      <HeroScreen {...heroProps}>
         <Stack.Screen options={{ headerShown: false }} />
 
         {theirPayId ? (
@@ -198,6 +194,11 @@ export default function BalanceBreakdownScreen() {
         <View style={{ gap: space.md }}>
           <SectionTitle title={`What makes up this balance · ${pair.rows.length}`} />
           <Gutter>
+            {isOwner ? null : (
+              <Text variant="caption" muted>
+                Only items you added are shown. The owner sees everything.
+              </Text>
+            )}
             <Card style={{ paddingVertical: pair.rows.length ? 0 : space.lg }}>
               {pair.rows.length === 0 ? <Text muted>Nothing between you two in this group yet.</Text> : null}
               {pair.rows.map((r, i) => {
@@ -307,7 +308,7 @@ export default function BalanceBreakdownScreen() {
   // ─── Your balance, person by person ──────────────────────────────────────
   const shown = perPerson.filter((p) => p.total !== 0 || group.memberIds.includes(p.id));
   return (
-    <HeroScreen header={header}>
+    <HeroScreen {...heroProps}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={{ gap: space.md }}>
         <SectionTitle title="Person by person" />

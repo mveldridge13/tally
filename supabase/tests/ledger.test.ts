@@ -103,7 +103,9 @@ describe('Tally ledger (Supabase)', () => {
   });
 
   it('computes balances that net to zero, and applies settlements', async () => {
-    let { data } = await bob.client.rpc('group_balances', { p_group_id: groupId });
+    // Only the owner gets everyone's balances; a member gets none from group_balances.
+    expect((await bob.client.rpc('group_balances', { p_group_id: groupId })).data).toEqual([]);
+    let { data } = await alice.client.rpc('group_balances', { p_group_id: groupId });
     const before = Object.fromEntries(data.map((r: { user_id: string; balance_cents: number }) => [r.user_id, r.balance_cents]));
     expect(before).toEqual({ [alice.id]: 5000, [bob.id]: -5000 });
 
@@ -112,7 +114,7 @@ describe('Tally ledger (Supabase)', () => {
     });
     expect(error).toBeNull();
 
-    ({ data } = await bob.client.rpc('group_balances', { p_group_id: groupId }));
+    ({ data } = await alice.client.rpc('group_balances', { p_group_id: groupId }));
     for (const row of data) expect(row.balance_cents).toBe(0);
   });
 

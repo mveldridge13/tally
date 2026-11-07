@@ -3,10 +3,10 @@
  * slide-up sheets, and plain-language balance sentences.
  */
 import { formatMoney, type Cents } from '@tally/shared';
-import { type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { useEffect, type ReactNode } from 'react';
+import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { SlideInDown } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { brand, groupColor, radius, space, useColors } from '@/theme';
@@ -97,38 +97,70 @@ export function Sheet({
   /** Pinned under the scrolling content, e.g. a Done button. */
   footer?: ReactNode;
 }) {
+  return (
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
+      {visible ? (
+        <SheetBody onClose={onClose} title={title} footer={footer}>
+          {children}
+        </SheetBody>
+      ) : null}
+    </Modal>
+  );
+}
+
+/**
+ * The backdrop and panel. Both start in their "closed" state from the very first frame (panel
+ * pushed below the screen, backdrop clear) and animate in from there. Reanimated's `entering`
+ * animations drew one frame in the final position first inside a Modal, which flickered.
+ */
+function SheetBody({ onClose, title, children, footer }: { onClose: () => void; title?: string; children: ReactNode; footer?: ReactNode }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const offset = useSharedValue(height);
+  const shade = useSharedValue(0);
+
+  useEffect(() => {
+    offset.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
+    shade.value = withTiming(1, { duration: 200 });
+  }, [offset, shade]);
+
+  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
+  const shadeStyle = useAnimatedStyle(() => ({ opacity: shade.value }));
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
-      <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Pressable accessibilityLabel="Close" onPress={onClose} style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-        <Animated.View
-          entering={SlideInDown.duration(220)}
-          style={{
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <Animated.View style={[{ position: 'absolute', inset: 0 }, shadeStyle]}>
+        <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+      </Animated.View>
+      <Animated.View
+        style={[
+          {
             maxHeight: '88%',
             backgroundColor: c.bg,
             borderTopLeftRadius: radius.xl,
             borderTopRightRadius: radius.xl,
             paddingBottom: insets.bottom + space.lg,
-          }}>
-          <View style={{ alignItems: 'center', paddingTop: space.sm, paddingBottom: space.xs }}>
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: c.border }} />
-          </View>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.lg, gap: space.lg }}>
-            {title ? (
-              <Text variant="title" style={{ fontSize: 22 }}>
-                {title}
-              </Text>
-            ) : null}
-            {children}
-          </ScrollView>
-          {footer ? <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>{footer}</View> : null}
-        </Animated.View>
-      </KeyboardAvoidingView>
-    </Modal>
+          },
+          panelStyle,
+        ]}>
+        <View style={{ alignItems: 'center', paddingTop: space.sm, paddingBottom: space.xs }}>
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: c.border }} />
+        </View>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.lg, gap: space.lg }}>
+          {title ? (
+            <Text variant="title" style={{ fontSize: 22 }}>
+              {title}
+            </Text>
+          ) : null}
+          {children}
+        </ScrollView>
+        {footer ? <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>{footer}</View> : null}
+      </Animated.View>
+    </KeyboardAvoidingView>
   );
 }
 

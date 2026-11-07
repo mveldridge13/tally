@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { useCallback, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { KeyboardAwareScrollView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,26 +44,36 @@ export function TallyMark({
   );
 }
 
-/** Logo lock-up: mark + wordmark. */
-export function Wordmark({ size = 28, color = brand.onDeep }: { size?: number; color?: string }) {
+/** Logo lock-up: mark + wordmark, written in lower case with a full stop ("tally."). */
+export function Wordmark({ size = 28, color = brand.onDeep, markColor }: { size?: number; color?: string; markColor?: string }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-      <TallyMark size={size * 1.25} />
+      <TallyMark size={size * 1.25} color={markColor} />
       <Text
         style={{
           fontSize: size,
           fontWeight: '800',
           letterSpacing: -0.5,
           color,
-        }}>
-        Tally
+        }}
+        accessibilityLabel="Tally">
+        tally.
       </Text>
     </View>
   );
 }
 
+/** White status-bar icons while a navy screen (sign in, welcome) is in front. */
+export function useLightStatusBar() {
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+    }, []),
+  );
+}
+
 /** Soft decorative circles for navy hero areas. */
-export function HeroGlow() {
+export function HeroGlow({ color = brand.accent, strength = 1 }: { color?: string; strength?: number } = {}) {
   return (
     <View pointerEvents="none" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
       <View
@@ -70,8 +82,8 @@ export function HeroGlow() {
           width: 320,
           height: 320,
           borderRadius: 160,
-          backgroundColor: brand.accent,
-          opacity: 0.1,
+          backgroundColor: color,
+          opacity: 0.1 * strength,
           top: -120,
           right: -100,
         }}
@@ -82,8 +94,8 @@ export function HeroGlow() {
           width: 220,
           height: 220,
           borderRadius: 110,
-          backgroundColor: brand.accent,
-          opacity: 0.07,
+          backgroundColor: color,
+          opacity: 0.07 * strength,
           top: 140,
           left: -120,
         }}
@@ -112,6 +124,7 @@ export function AuthShell({
   const insets = useSafeAreaInsets();
   // While typing, collapse the header to just the title so the form has room above the keyboard.
   const typing = useKeyboardState((state) => state.isVisible);
+  useLightStatusBar();
   return (
     <View style={{ flex: 1, backgroundColor: brand.deep }}>
       <HeroGlow />
@@ -136,6 +149,7 @@ export function AuthShell({
       </View>
 
       <KeyboardAwareScrollView
+        showsVerticalScrollIndicator={false}
         bottomOffset={space.xl}
         style={{
           flex: 1,

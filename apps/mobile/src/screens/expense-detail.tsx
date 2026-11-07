@@ -2,12 +2,12 @@ import { centsToDecimalString, formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, QuickAction, SectionTitle, TotalPill } from '@/components/dashboard';
+import { CardFigure, Gutter, HeroScreen, QuickAction, SectionTitle, StatRow, TotalPill } from '@/components/dashboard';
 import { Avatar, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useDeleteExpense, useExpenseHistory, useNameOf, useTallyData } from '@/lib/data';
 import { relativeTime } from '@/lib/format';
-import { brand, groupColor, space, useColors } from '@/theme';
+import { space, useColors } from '@/theme';
 
 const METHOD_LABEL = {
   equal: 'Split equally',
@@ -43,7 +43,7 @@ export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; em
 
   if (!expense || !group) {
     return (
-      <HeroScreen variant={embedded ? 'card' : 'full'} header={<HeroNav mode={embedded ? 'none' : 'back'} title="Expense" />}>
+      <HeroScreen variant={embedded ? 'card' : 'full'} nav={embedded ? 'none' : 'back'} title="Expense">
         <Gutter>
           <Notice tone="info">{isLoading ? 'Loading…' : 'This expense has been deleted.'}</Notice>
         </Gutter>
@@ -81,60 +81,43 @@ export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; em
     return null;
   };
 
-  const header = (
+  const card = (
     <>
-      <HeroNav
-        mode={embedded ? 'none' : 'back'}
-        eyebrow={`${group.name} · Expense`}
-        title={expense.description}
-        leading={<Avatar name={expense.description} color={groupColor(group.id)} square size={44} />}
+      <CardFigure
+        label="Amount"
+        value={money(expense.amount)}
+        note={`Paid by ${name(expense.payerId)} · ${formatDateTime(expense.occurredAt)}`}
       />
-      <View style={{ marginTop: space.xl, gap: space.xs }}>
-        <Text variant="label" color={onDeepMuted}>
-          Amount
-        </Text>
-        <Text
-          style={{
-            fontSize: 44,
-            fontWeight: '800',
-            letterSpacing: -1,
-            color: brand.onDeep,
-            fontVariant: ['tabular-nums'],
-          }}>
-          {money(expense.amount)}
-        </Text>
-        <Text variant="body" color={onDeepMuted}>
-          Paid by {name(expense.payerId)} · {formatDateTime(expense.occurredAt)}
-        </Text>
-      </View>
-      <View style={{ flexDirection: 'row', gap: space.md, marginTop: space.lg }}>
+      <StatRow>
         <TotalPill label="Your share" cents={myShare} currency={group.currency} tone="neutral" />
         <TotalPill
           label={myEffect > 0 ? 'You lent' : myEffect < 0 ? 'You borrowed' : 'Your balance'}
           value={myEffect === 0 ? 'No change' : money(Math.abs(myEffect))}
           tone={myEffect > 0 ? 'owed' : myEffect < 0 ? 'owe' : 'neutral'}
         />
-      </View>
-      <View style={{ flexDirection: 'row', marginTop: space.xl }}>
-        <QuickAction
-          icon="✎"
-          label="Edit"
-          primary
-          onPress={() =>
-            router.push({
-              pathname: '/add-expense',
-              params: { expenseId: expense.id },
-            })
-          }
-        />
-        <QuickAction icon="◎" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
-        <QuickAction icon="×" label="Delete" onPress={confirmDelete} />
-      </View>
+      </StatRow>
     </>
   );
 
   return (
-    <HeroScreen variant={embedded ? 'card' : 'full'} header={header}>
+    <HeroScreen
+      variant={embedded ? 'card' : 'full'}
+      nav={embedded ? 'none' : 'back'}
+      eyebrow={`${group.name} · Expense`}
+      title={expense.description}
+      actions={
+        <>
+          <QuickAction
+            icon="edit"
+            label="Edit"
+            onPress={() => router.push({ pathname: '/add-expense', params: { expenseId: expense.id } })}
+          />
+          <QuickAction bold icon="groups" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
+          <QuickAction bold icon="delete-outline" label="Delete" danger onPress={confirmDelete} />
+        </>
+      }
+      cardTone="light"
+      card={card}>
       {deleteExpense.isError ? (
         <Gutter>
           <Notice>{deleteExpense.error.message}</Notice>

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
 import { TallyMark } from '@/components/brand';
-import { Gutter, HeroNav, HeroScreen, onDeepMuted } from '@/components/dashboard';
+import { Gutter, HeroScreen, onDeepMuted } from '@/components/dashboard';
 import { Button, Notice, Text } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { useAcceptInvite } from '@/lib/data';
@@ -11,7 +11,7 @@ import { savePendingInvite } from '@/lib/pending-invite';
 import { brand, space } from '@/theme';
 
 /**
- * Opened from tally://invite/<token>, the "Join a group" box on the Groups tab, or automatically
+ * Opened from tally://invite/<token> (via the invite web page) or automatically
  * after sign-in when an invite was saved while signed out.
  */
 export default function AcceptInviteScreen() {
@@ -36,10 +36,9 @@ export default function AcceptInviteScreen() {
 
   const failed = accept.isError;
 
-  const header = (
+  const card = (
     <>
-      <HeroNav mode="back" eyebrow="Invite" title={failed ? 'Couldn’t join' : 'Joining group'} />
-      <View style={{ alignItems: 'center', marginTop: space.xl, gap: space.lg }}>
+      <View style={{ alignItems: 'center', gap: space.lg }}>
         <TallyMark size={64} />
         {failed ? null : <ActivityIndicator color={brand.accent} />}
         <Text variant="body" color={onDeepMuted} style={{ textAlign: 'center' }}>
@@ -50,15 +49,15 @@ export default function AcceptInviteScreen() {
   );
 
   return (
-    <HeroScreen header={header}>
+    <HeroScreen nav="back" eyebrow="Invite" title={failed ? 'Couldn’t join' : 'Joining group'} card={card}>
       <Stack.Screen options={{ headerShown: false }} />
       <Gutter>
         {failed ? (
           <>
             <Notice>{accept.error.message}</Notice>
             <Text variant="caption" muted>
-              Invite codes expire after 14 days and stop working if the group is deleted. Ask for a fresh invite and paste the new code on
-              the Groups tab.
+              Invite codes expire after 14 days and stop working if the group is deleted. Ask for a fresh invite, then tap the link or paste
+              it in Groups → Join group.
             </Text>
             <Button label="Back to groups" onPress={() => router.replace('/groups')} />
           </>

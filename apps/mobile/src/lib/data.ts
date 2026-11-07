@@ -1,14 +1,4 @@
-import {
-  type PayIdType,
-  computeBalances,
-  computeSplit,
-  simplifyDebts,
-  type Balances,
-  type Cents,
-  type SplitInput,
-  type SplitShare,
-  type Transfer,
-} from '@tally/shared';
+import { type PayIdType, computeSplit, type Balances, type Cents, type SplitInput, type SplitShare, type Transfer } from '@tally/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
@@ -17,8 +7,9 @@ import { deviceCurrency } from './currencies';
 import { supabase } from './supabase';
 
 /**
- * Data layer. Reads all of the user's groups (RLS limits rows to groups they belong to)
- * in one nested query, then derives balances on-device with the shared engine.
+ * Data layer. Reads all of the user's groups in one nested query. RLS limits the rows: in groups
+ * you own you get every expense and payment; elsewhere only the ones you added or took part in.
+ * Balances come from the server (my_group_summaries), which sees the whole ledger.
  * Writes go through the database functions, which re-validate everything.
  */
 
@@ -101,15 +92,30 @@ export interface TallyData {
   payIds: Record<string, PayId>;
   people: Record<string, Person>;
   groups: Group[];
+  /** Expenses and payments you're allowed to see: everything in groups you own, only your own elsewhere. */
   expenses: Expense[];
   settlements: Settlement[];
+  /** Balances per group, worked out on the server from the whole ledger (see my_group_summaries). */
+  ledgers: Record<string, GroupLedger>;
 }
 
-const EMPTY: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [] };
+/** What the server tells you about a group's money. Members get only their own share of this. */
+export interface GroupLedger {
+  myBalance: Cents;
+  myShare: Cents;
+  /** Owner only; null for members. */
+  totalSpent: Cents | null;
+  /** Owner: every member. Member: only you. */
+  balances: Map<string, Cents>;
+  /** Owner: the whole "who pays whom" list. Member: only the lines that include you. */
+  transfers: Transfer[];
+}
+
+const EMPTY: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], ledgers: {} };
 export const TALLY_KEY = ['tally'] as const;
 
 async function fetchTally(myId: string): Promise<TallyData> {
-  const [groupsRes, meRes, payIdsRes] = await Promise.all([
+  const [groupsRes, meRes, payIdsRes, ledgersRes] = await Promise.all([
     supabase
       .from('groups')
       .select(
@@ -127,10 +133,21 @@ async function fetchTally(myId: string): Promise<TallyData> {
     supabase.from('profiles').select('id, name, currency, currency_chosen, created_at').eq('id', myId).maybeSingle(),
     // RLS returns only your own PayID and those of people you share a group with.
     supabase.from('payment_methods').select('user_id, payid_type, value, account_name').eq('kind', 'payid'),
+    supabase.rpc('my_group_summaries'),
   ]);
   if (groupsRes.error) throw groupsRes.error;
+  if (ledgersRes.error) throw ledgersRes.error;
 
-  const data: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [] };
+  const data: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], ledgers: {} };
+  for (const l of (ledgersRes.data ?? []) as unknown as ServerLedger[]) {
+    data.ledgers[l.group_id] = {
+      myBalance: l.my_balance,
+      myShare: l.my_share,
+      totalSpent: l.total_spent,
+      balances: new Map(l.balances.map((b) => [b.user_id, b.balance_cents])),
+      transfers: l.transfers.map((t) => ({ fromUserId: t.from_user_id, toUserId: t.to_user_id, amount: t.amount_cents })),
+    };
+  }
   for (const p of payIdsRes.data ?? []) {
     data.payIds[p.user_id] = { type: p.payid_type as PayIdType, value: p.value, accountName: p.account_name };
   }
@@ -208,18 +225,47 @@ export function useNameOf() {
 
 export interface GroupSummary {
   group: Group;
+  /** You own the group, so you see everything in it. */
+  isOwner: boolean;
+  /**
+   * Owner: every member's balance in the group.
+   * Member: your balance, and for everyone else what's owed between the two of you
+   * (positive = you owe them, negative = they owe you), from the transfers you're in.
+   */
   balances: Balances;
   myBalance: Cents;
   transfers: Transfer[];
+  myShare: Cents;
+  /** Owner only. */
+  totalSpent: Cents | null;
 }
 
-export function summarizeGroup(group: Group, expenses: Expense[], settlements: Settlement[], myId: string): GroupSummary {
-  const balances = computeBalances(
-    expenses.filter((e) => e.groupId === group.id),
-    settlements.filter((s) => s.groupId === group.id),
-    group.memberIds,
-  );
-  return { group, balances, myBalance: balances.get(myId) ?? 0, transfers: simplifyDebts(balances) };
+/** Shape of one entry from the my_group_summaries() database function. */
+interface ServerLedger {
+  group_id: string;
+  my_balance: number;
+  my_share: number;
+  total_spent: number | null;
+  balances: { user_id: string; balance_cents: number }[];
+  transfers: { from_user_id: string; to_user_id: string; amount_cents: number }[];
+}
+
+const NO_LEDGER: GroupLedger = { myBalance: 0, myShare: 0, totalSpent: null, balances: new Map(), transfers: [] };
+
+export function summarizeGroup(group: Group, ledger: GroupLedger | undefined, myId: string): GroupSummary {
+  const l = ledger ?? NO_LEDGER;
+  const isOwner = group.myRole === 'owner';
+  let balances: Balances = l.balances;
+  if (!isOwner) {
+    // Members only get the lines that include them: show each person what's between you two.
+    balances = new Map(group.memberIds.map((id) => [id, 0]));
+    balances.set(myId, l.myBalance);
+    for (const t of l.transfers) {
+      if (t.fromUserId === myId) balances.set(t.toUserId, (balances.get(t.toUserId) ?? 0) + t.amount);
+      else if (t.toUserId === myId) balances.set(t.fromUserId, (balances.get(t.fromUserId) ?? 0) - t.amount);
+    }
+  }
+  return { group, isOwner, balances, myBalance: l.myBalance, transfers: l.transfers, myShare: l.myShare, totalSpent: l.totalSpent };
 }
 
 /** Net balance per currency. Different currencies are never added together. */

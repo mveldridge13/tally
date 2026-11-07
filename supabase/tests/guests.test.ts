@@ -82,9 +82,13 @@ describe('Guest members', () => {
     const { data: joined, error: claimError } = await sam.client.rpc('accept_invite', { p_token: token });
     expect(claimError).toBeNull();
     expect(joined).toBe(groupId);
-    expect(await balances(sam)).toEqual({ [owner.id]: 4400, [member.id]: -3000, [sam.id]: -1400 });
+    expect(await balances()).toEqual({ [owner.id]: 4400, [member.id]: -3000, [sam.id]: -1400 });
+    // Sam is a member, so their own balance comes from the server summary.
+    const { data: mine } = await sam.client.rpc('my_group_summaries');
+    expect((mine as { group_id: string; my_balance: number }[]).find((g) => g.group_id === groupId)?.my_balance).toBe(-1400);
 
-    const { data: drinks } = await sam.client.from('expenses').select('payer_id, expense_splits(user_id)').eq('description', 'Drinks').single();
+    // The owner sees the expense now credited to Sam (members only see items they added).
+    const { data: drinks } = await owner.client.from('expenses').select('payer_id, expense_splits(user_id)').eq('description', 'Drinks').single();
     expect(drinks!.payer_id).toBe(sam.id);
     expect(drinks!.expense_splits.map((s) => s.user_id)).toContain(sam.id);
     const { data: guestRow } = await owner.client.from('group_members').select('user_id').eq('group_id', groupId).eq('user_id', guestId);

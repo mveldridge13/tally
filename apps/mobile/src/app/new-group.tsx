@@ -1,14 +1,16 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createGroupSchema } from '@tally/shared';
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, TextInput, View, type TextInputInstance } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
+import { Gutter, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
 import { GROUP_ICONS } from '@/components/friendly';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
-import { Button, Card, Notice, Text } from '@/components/ui';
+import { QuickAddPeople } from '@/components/quick-add-people';
+import { Button, Notice, Text } from '@/components/ui';
 import { CURRENCIES, isSupportedCurrency, type Currency } from '@/lib/currencies';
-import { useAddMembers, useCreateGroup, useSplitPartners, useTallyData } from '@/lib/data';
+import { useAddGuest, useAddMembers, useCreateGroup, useSplitPartners, useTallyData } from '@/lib/data';
 import { useAfterTransition } from '@/lib/transitions';
 import { brand, radius, space, useColors } from '@/theme';
 
@@ -22,8 +24,6 @@ const CURRENCY_INFO: Record<Currency, { symbol: string; name: string }> = {
   SGD: { symbol: 'S$', name: 'Singapore dollar' },
   INR: { symbol: '₹', name: 'Indian rupee' },
 };
-
-const SUGGESTIONS = ['Holiday', 'Flatmates', 'Dinner club', 'Road trip', 'Household', 'Weekend away'];
 
 function CurrencyCard({
   code,
@@ -51,9 +51,8 @@ function CurrencyCard({
         alignItems: 'center',
         gap: space.md,
         padding: space.md,
-        borderRadius: radius.md,
-        borderWidth: selected ? 2 : 1,
-        borderColor: selected ? c.focus : c.border,
+        // No outline: filled like the rest of the page's tiles. The chosen one is pale sage with a tick.
+        borderRadius: radius.lg,
         backgroundColor: selected ? c.surfaceAlt : c.surface,
       }}>
       <View
@@ -81,17 +80,23 @@ function CurrencyCard({
           {info.name}
         </Text>
       </View>
+      {selected && !wide ? <MaterialIcons name="check" size={20} color={c.primary} /> : null}
+      {wide ? <MaterialIcons name="expand-more" size={24} color={c.textMuted} /> : null}
     </Pressable>
   );
 }
 
 export default function NewGroupScreen() {
-  const c = useColors();
   const { data } = useTallyData();
   const createGroup = useCreateGroup();
   const addMembers = useAddMembers();
+  const addGuest = useAddGuest();
   const { data: partners } = useSplitPartners();
   const people = useSelection();
+  // People not in "People you split with", added by name (they join the group as guests).
+  const [newPeople, setNewPeople] = useState<string[]>([]);
+  const [newName, setNewName] = useState('');
+  const total = people.selected.size + newPeople.length;
   const [name, setName] = useState('');
   const myCurrency = data.me?.currency;
   const [currency, setCurrency] = useState<Currency>(isSupportedCurrency(myCurrency) ? myCurrency : 'USD');
@@ -110,7 +115,7 @@ export default function NewGroupScreen() {
   const currencies = [...CURRENCIES].sort((a, b) => Number(b === data.me?.currency) - Number(a === data.me?.currency));
 
   async function create() {
-    if (!parsed.success || createGroup.isPending || addMembers.isPending) return;
+    if (!parsed.success || createGroup.isPending || addMembers.isPending || addGuest.isPending) return;
     let group;
     try {
       group = await createGroup.mutateAsync({ ...parsed.data, icon });
@@ -126,15 +131,26 @@ export default function NewGroupScreen() {
         Alert.alert('Group created, but nobody was added', e instanceof Error ? e.message : 'Please try adding them again from the group.');
       }
     }
+    // A name typed but not yet added with the Add button still counts.
+    const names = newName.trim() && !newPeople.includes(newName.trim()) ? [...newPeople, newName.trim()] : newPeople;
+    const failed: string[] = [];
+    for (const guest of names) {
+      try {
+        await addGuest.mutateAsync({ groupId: group.id, name: guest });
+      } catch {
+        failed.push(guest);
+      }
+    }
+    if (failed.length) {
+      Alert.alert(`Couldn’t add ${failed.join(', ')}`, 'The group was created. Add them from the group with Add people.');
+    }
     router.replace(`/group/${group.id}`);
   }
 
-  const header = (
+  const card = (
     <>
-      <HeroNav mode="close" eyebrow="Groups" title="New group" />
-
       {/* Live preview of the group's avatar */}
-      <View style={{ alignItems: 'center', marginTop: space.xl, gap: space.lg }}>
+      <View style={{ alignItems: 'center', gap: space.lg }}>
         <View
           style={{
             width: 84,
@@ -217,34 +233,8 @@ export default function NewGroupScreen() {
   );
 
   return (
-    <HeroScreen header={header}>
+    <HeroScreen nav="close" eyebrow="Groups" title="New group" card={card}>
       <Stack.Screen options={{ headerShown: false }} />
-
-      {!name.trim() ? (
-        <View style={{ gap: space.md }}>
-          <SectionTitle title="Ideas" />
-          <Gutter>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-              {SUGGESTIONS.map((s) => (
-                <Pressable
-                  key={s}
-                  accessibilityRole="button"
-                  onPress={() => setName(s)}
-                  style={{
-                    paddingVertical: space.sm,
-                    paddingHorizontal: space.md,
-                    borderRadius: radius.pill,
-                    borderWidth: 1,
-                    borderColor: c.border,
-                    backgroundColor: c.surface,
-                  }}>
-                  <Text variant="label">{s}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Gutter>
-        </View>
-      ) : null}
 
       {partners.length > 0 ? (
         <View style={{ gap: space.md }}>
@@ -259,11 +249,14 @@ export default function NewGroupScreen() {
       ) : null}
 
       <View style={{ gap: space.md }}>
-        <SectionTitle
-          title="Currency"
-          action={pickingCurrency ? 'Done' : 'Change'}
-          onAction={() => setPickingCurrency((v) => !v)}
-        />
+        <SectionTitle title={partners.length > 0 ? 'Someone new' : 'Add people'} />
+        <Gutter>
+          <QuickAddPeople names={newPeople} onNamesChange={setNewPeople} draft={newName} onDraftChange={setNewName} />
+        </Gutter>
+      </View>
+
+      <View style={{ gap: space.md }}>
+        <SectionTitle title="Currency" action={pickingCurrency ? 'Done' : 'Change'} onAction={() => setPickingCurrency((v) => !v)} />
         <Gutter>
           {pickingCurrency ? (
             <View
@@ -295,30 +288,12 @@ export default function NewGroupScreen() {
       </View>
 
       <Gutter>
-        <Card
-          style={{
-            flexDirection: 'row',
-            gap: space.md,
-            alignItems: 'flex-start',
-          }}>
-          <Text style={{ fontSize: 20 }}>👥</Text>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="heading">{partners.length > 0 ? 'Anyone else? Invite them next' : 'Next: invite people'}</Text>
-            <Text variant="caption" muted>
-              You’ll be the owner. After creating the group, tap Invite to share a code with {partners.length > 0 ? 'anyone new' : 'friends'}.
-            </Text>
-          </View>
-        </Card>
         {createGroup.isError ? <Notice>{createGroup.error.message}</Notice> : null}
         <Button
-          label={
-            people.selected.size > 0
-              ? `Create group with ${people.selected.size} ${people.selected.size === 1 ? 'person' : 'people'}`
-              : 'Create group'
-          }
+          label={total > 0 ? `Create group with ${total} ${total === 1 ? 'person' : 'people'}` : 'Create group'}
           onPress={create}
           disabled={!parsed.success}
-          loading={createGroup.isPending || addMembers.isPending}
+          loading={createGroup.isPending || addMembers.isPending || addGuest.isPending}
         />
       </Gutter>
     </HeroScreen>

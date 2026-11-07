@@ -10,7 +10,7 @@ import { Text } from '@/components/ui';
 import { useSyncDeviceCurrency } from '@/lib/data';
 import { takePendingInvite } from '@/lib/pending-invite';
 import { NAV_RAIL_SIDE, NAV_RAIL_WIDTH, useWidthClass } from '@/lib/layout';
-import { brand, radius, space, useColors } from '@/theme';
+import { radius, space, useColors } from '@/theme';
 
 type IconName = ComponentProps<typeof MaterialIcons>['name'];
 
@@ -22,16 +22,15 @@ const TABS: { name: string; href: '/' | '/groups' | '/activity' | '/profile'; la
 ];
 
 /** One tab: icon in a pill (filled when selected) with its label underneath. Same look in the bar and the rail. */
-function TabButton(allProps: TabTriggerSlotProps & { icon: IconName; label: string; onNavy?: boolean }) {
+function TabButton(allProps: TabTriggerSlotProps & { icon: IconName; label: string }) {
   // The trigger forwards a ref typed for a plain View; this button doesn't need it.
-  const { isFocused, icon, label, onNavy, ref, ...props } = allProps;
+  const { isFocused, icon, label, ref, ...props } = allProps;
   void ref;
   const c = useColors();
-  // On the navy rail: sky-blue selected pill, light icons. On the light bottom bar: the usual surface colours.
-  const pill = onNavy ? brand.tintOnDeep : c.surfaceAlt;
-  const iconOn = onNavy ? brand.accent : c.primary;
-  const iconOff = onNavy ? brand.onDeepMuted : c.textMuted;
-  const textOn = onNavy ? brand.onDeep : c.text;
+  const pill = c.surfaceAlt;
+  const iconOn = c.primary;
+  const iconOff = c.textMuted;
+  const textOn = c.text;
   return (
     <Pressable
       {...props}
@@ -76,7 +75,7 @@ export default function TabsLayout() {
 
   const triggers = TABS.map((t) => (
     <TabTrigger key={t.name} name={t.name} href={t.href} asChild>
-      <TabButton icon={t.icon} label={t.label} onNavy={rail} />
+      <TabButton icon={t.icon} label={t.label} />
     </TabTrigger>
   ));
 
@@ -89,11 +88,14 @@ export default function TabsLayout() {
         paddingTop: insets.top + space.lg,
         paddingBottom: insets.bottom + space.lg,
         gap: space.sm,
-        // Navy, like the header beside it: it runs under the status bar, whose clock and icons are white.
-        backgroundColor: brand.deep,
+        // Light, like the headers beside it.
+        backgroundColor: c.surface,
+        borderRightWidth: railOnRight ? 0 : StyleSheet.hairlineWidth,
+        borderLeftWidth: railOnRight ? StyleSheet.hairlineWidth : 0,
+        borderColor: c.border,
       }}>
       <View style={{ alignItems: 'center', paddingBottom: space.lg }} pointerEvents="none">
-        <TallyMark size={36} />
+        <TallyMark size={36} color={c.primary} />
       </View>
       {triggers}
     </TabList>
@@ -118,7 +120,7 @@ export default function TabsLayout() {
   );
 
   return (
-    <Tabs style={{ flex: 1, flexDirection: rail ? 'row' : 'column', backgroundColor: brand.deep }}>
+    <Tabs style={{ flex: 1, flexDirection: rail ? 'row' : 'column', backgroundColor: c.bg }}>
       {rail && !railOnRight ? list : null}
       {slot}
       {!rail || railOnRight ? list : null}

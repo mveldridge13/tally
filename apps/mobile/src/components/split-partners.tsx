@@ -69,10 +69,7 @@ export function SplitPartnerPicker({
         })}
       </Card>
       {partners.length > FIRST ? (
-        <LinkButton
-          label={showAll ? 'Show fewer' : `Show ${partners.length - FIRST} more`}
-          onPress={() => setShowAll((v) => !v)}
-        />
+        <LinkButton label={showAll ? 'Show fewer' : `Show ${partners.length - FIRST} more`} onPress={() => setShowAll((v) => !v)} />
       ) : null}
     </>
   );

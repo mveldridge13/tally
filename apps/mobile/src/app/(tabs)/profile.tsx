@@ -3,13 +3,13 @@ import Constants from 'expo-constants';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
-import { Gutter, HeroScreen, onDeepMuted, SectionTitle, TotalPill } from '@/components/dashboard';
+import { Gutter, HeroScreen, onDeepMuted, SectionTitle, StatRow, TotalPill } from '@/components/dashboard';
 import { Avatar, Button, Card, Chip, Divider, Field, Notice, Text } from '@/components/ui';
 import { useMyEmail, useMyId } from '@/lib/auth';
 import { CURRENCIES } from '@/lib/currencies';
 import { PAYID_CURRENCY, useRemovePayId, useSetPayId, useTallyData, useUpdateProfile } from '@/lib/data';
 import { supabase } from '@/lib/supabase';
-import { PRESS_DELAY, brand, space, useColors } from '@/theme';
+import { PRESS_DELAY, space, useColors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 /** A tappable settings row: label on the left, current value and chevron on the right. */
@@ -146,36 +146,28 @@ export default function ProfileScreen() {
     ]);
   }
 
-  const header = (
-    <View style={{ alignItems: 'center', gap: space.sm }}>
-      <Avatar name={me?.name || email || '?'} size={88} color={brand.tintOnDeep} />
-      <Text variant="title" color={brand.onDeep} style={{ marginTop: space.sm }}>
-        {me?.name ?? ''}
+  const card = (
+    <>
+      <Text variant="label" color={onDeepMuted}>
+        {memberSince ? `On Tally since ${memberSince}` : 'Your Tally'}
       </Text>
-      <Text variant="body" color={onDeepMuted}>
-        {email}
-      </Text>
-      {memberSince ? (
-        <Text variant="caption" color={onDeepMuted}>
-          On Tally since {memberSince}
-        </Text>
-      ) : null}
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: space.md,
-          marginTop: space.lg,
-          alignSelf: 'stretch',
-        }}>
-        <TotalPill label="Groups" value={String(stats.groups)} tone="owed" />
+      <StatRow>
+        <TotalPill label="Groups" value={String(stats.groups)} tone="neutral" />
         <TotalPill label="Expenses added" value={String(stats.added)} tone="neutral" />
         <TotalPill label="Payments" value={String(stats.payments)} tone="neutral" />
-      </View>
-    </View>
+      </StatRow>
+    </>
   );
 
   return (
-    <HeroScreen header={header} refreshing={pull.refreshing} onRefresh={pull.onRefresh}>
+    <HeroScreen
+      nav="tab"
+      title={me?.name || 'Profile'}
+      subtitle={email ?? undefined}
+      right={<Avatar name={me?.name || email || '?'} size={44} />}
+      card={card}
+      refreshing={pull.refreshing}
+      onRefresh={pull.onRefresh}>
       <View style={{ gap: space.md }}>
         <SectionTitle title="Account" />
         <Gutter>

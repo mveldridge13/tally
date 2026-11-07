@@ -18,6 +18,8 @@ export const brand = {
   /** Pale sage: accent, used for highlights and the main action on the header. */
   accent: '#D3E5DA',
   accentSoft: '#E8F1EB',
+  /** Lighter shade of the sage tiles (sage mixed 50% with white): Home's summary card. Dark text only. */
+  sageLight: '#A6B6AE',
   /** Red slash in the Tally mark: part of the logo in every palette. Logo only; never used for money states. */
   slash: '#F2555A',
   onDeep: '#FFFFFF',

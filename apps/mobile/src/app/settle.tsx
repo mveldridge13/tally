@@ -3,7 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 
-import { Gutter, HeroNav, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
+import { Gutter, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
 import { Avatar, Button, Card, Field, Notice, Text } from '@/components/ui';
 import { PayIdCard } from '@/components/payid-card';
 import { useMyId } from '@/lib/auth';
@@ -63,7 +63,7 @@ export default function SettleScreen() {
 
   if (!group || !from || !to) {
     return (
-      <HeroScreen header={<HeroNav mode="close" title={isEdit ? 'Correct payment' : 'Record a payment'} />}>
+      <HeroScreen nav="close" title={isEdit ? 'Correct payment' : 'Record a payment'}>
         <Stack.Screen options={{ headerShown: false }} />
         <Gutter>
           <Notice tone="info">{isEdit ? 'This payment was already changed or undone.' : 'There’s nothing to settle here.'}</Notice>
@@ -107,15 +107,9 @@ export default function SettleScreen() {
       ]
     : [];
 
-  const header = (
+  const card = (
     <>
-      <HeroNav mode="close" eyebrow={group.name} title={isEdit ? 'Correct payment' : 'Record a payment'} />
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          marginTop: space.xl,
-        }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Party who={name(from)} role="pays" />
         <Text style={{ fontSize: 28, color: brand.accent }}>→</Text>
         <Party who={name(to)} role="receives" />
@@ -154,7 +148,7 @@ export default function SettleScreen() {
   );
 
   return (
-    <HeroScreen header={header}>
+    <HeroScreen nav="close" eyebrow={group.name} title={isEdit ? 'Correct payment' : 'Record a payment'} card={card}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {quick.length ? (
