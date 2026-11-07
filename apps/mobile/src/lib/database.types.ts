@@ -569,7 +569,21 @@ export type Database = {
       is_valid_abn: { Args: { p_abn: string }; Returns: boolean };
       leave_group: { Args: { p_group_id: string }; Returns: undefined };
       member_net_balance: { Args: { p_group_id: string; p_user_id: string }; Returns: number };
+      mark_notifications_read: { Args: Record<PropertyKey, never>; Returns: undefined };
       my_group_summaries: { Args: Record<PropertyKey, never>; Returns: Json };
+      my_notifications: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          actor_name: string | null;
+          created_at: string;
+          group_icon: string | null;
+          group_id: string;
+          group_name: string;
+          id: string;
+          kind: string;
+          read_at: string | null;
+        }[];
+      };
       record_settlement: {
         Args: {
           p_amount_cents: number;

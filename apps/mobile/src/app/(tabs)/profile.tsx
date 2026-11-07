@@ -1,15 +1,16 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { formatPayId, normalisePayId, PAYID_TYPES, type PayIdType } from '@tally/shared';
 import Constants from 'expo-constants';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
-import { Gutter, HeroScreen, onDeepMuted, SectionTitle, StatRow, TotalPill } from '@/components/dashboard';
+import { Gutter, HeroScreen, SectionTitle } from '@/components/dashboard';
 import { Avatar, Button, Card, Chip, Divider, Field, Notice, Text } from '@/components/ui';
 import { useMyEmail, useMyId } from '@/lib/auth';
 import { CURRENCIES } from '@/lib/currencies';
 import { PAYID_CURRENCY, useRemovePayId, useSetPayId, useTallyData, useUpdateProfile } from '@/lib/data';
 import { supabase } from '@/lib/supabase';
-import { PRESS_DELAY, space, useColors } from '@/theme';
+import { PRESS_DELAY, brand, space, useColors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 /** A tappable settings row: label on the left, current value and chevron on the right. */
@@ -71,22 +72,6 @@ export default function ProfileScreen() {
     done?: boolean;
   }>({ busy: false });
 
-  const stats = useMemo(
-    () => ({
-      groups: data.groups.length,
-      added: data.expenses.filter((e) => e.createdById === myId).length,
-      payments: data.settlements.filter((s) => s.fromUserId === myId || s.toUserId === myId).length,
-    }),
-    [data, myId],
-  );
-
-  const memberSince = me
-    ? new Date(me.createdAt).toLocaleDateString(undefined, {
-        month: 'long',
-        year: 'numeric',
-      })
-    : '';
-
   function open(section: Editing) {
     updateProfile.reset();
     setPasswordState({ busy: false });
@@ -146,17 +131,32 @@ export default function ProfileScreen() {
     ]);
   }
 
+  // Your initial, large, in the middle of the card. The camera badge is a placeholder for profile photos.
   const card = (
-    <>
-      <Text variant="label" color={onDeepMuted}>
-        {memberSince ? `On Tally since ${memberSince}` : 'Your Tally'}
-      </Text>
-      <StatRow>
-        <TotalPill label="Groups" value={String(stats.groups)} tone="neutral" />
-        <TotalPill label="Expenses added" value={String(stats.added)} tone="neutral" />
-        <TotalPill label="Payments" value={String(stats.payments)} tone="neutral" />
-      </StatRow>
-    </>
+    <View style={{ alignItems: 'center', paddingVertical: space.sm }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Add a profile photo"
+        onPress={() => Alert.alert('Profile photos are coming soon', 'For now, people in your groups see your initial.')}>
+        <Avatar name={me?.name || email || '?'} size={88} color={brand.deep} />
+        <View
+          style={{
+            position: 'absolute',
+            right: -2,
+            bottom: -2,
+            width: 32,
+            height: 32,
+            borderRadius: 16,
+            backgroundColor: c.surface,
+            borderWidth: 2,
+            borderColor: brand.deep,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <MaterialIcons name="photo-camera" size={16} color={brand.deep} />
+        </View>
+      </Pressable>
+    </View>
   );
 
   return (
@@ -164,8 +164,8 @@ export default function ProfileScreen() {
       nav="tab"
       title={me?.name || 'Profile'}
       subtitle={email ?? undefined}
-      right={<Avatar name={me?.name || email || '?'} size={44} />}
       card={card}
+      cardTone="light"
       refreshing={pull.refreshing}
       onRefresh={pull.onRefresh}>
       <View style={{ gap: space.md }}>

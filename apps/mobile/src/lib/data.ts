@@ -586,3 +586,47 @@ export async function createInvite(groupId: string, guestId?: string): Promise<s
   if (error) throw error;
   return data;
 }
+
+export interface AppNotification {
+  id: string;
+  kind: 'added_to_group';
+  group: { id: string; name: string; icon: string | null };
+  actorName: string;
+  at: string;
+  read: boolean;
+}
+
+/** Your notifications under the bell, newest first. Refreshes whenever the rest of the data does. */
+export function useNotifications() {
+  const myId = useMyId();
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'notifications', myId],
+    queryFn: async (): Promise<AppNotification[]> => {
+      const { data, error } = await supabase.rpc('my_notifications');
+      if (error) throw error;
+      return data.map((n) => ({
+        id: n.id,
+        kind: n.kind as AppNotification['kind'],
+        group: { id: n.group_id, name: n.group_name, icon: n.group_icon },
+        actorName: n.actor_name ?? 'Someone',
+        at: n.created_at,
+        read: n.read_at !== null,
+      }));
+    },
+    enabled: !!myId,
+  });
+  const list = query.data ?? [];
+  return { ...query, data: list, unread: list.filter((n) => !n.read).length };
+}
+
+/** Mark all your notifications as read (on opening the list). */
+export function useMarkNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('mark_notifications_read');
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...TALLY_KEY, 'notifications'] }),
+  });
+}

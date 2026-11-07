@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 
 import { TallyMark } from '@/components/brand';
 import { ToSettle } from '@/components/to-settle';
+import { NotificationBell } from '@/components/notification-bell';
 import { Gutter, HeroScreen, PositionFigure, QuickAction, StatRow, TotalPill, usePosition } from '@/components/dashboard';
 import { Avatar, Card, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
@@ -63,9 +64,12 @@ export default function HomeScreen() {
         title={`${greeting()}, ${firstName(me) || 'there'}`}
         subtitle={hasGroups ? 'Here’s where you stand with your groups.' : 'Welcome to Tally.'}
         right={
-          <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => router.push('/profile')} hitSlop={8}>
-            <Avatar name={me || '?'} size={44} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <NotificationBell />
+            <Pressable accessibilityRole="button" accessibilityLabel="Profile" onPress={() => router.push('/profile')} hitSlop={8}>
+              <Avatar name={me || '?'} size={44} />
+            </Pressable>
+          </View>
         }
         actions={
           <>

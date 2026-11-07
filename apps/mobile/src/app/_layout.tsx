@@ -69,6 +69,7 @@ export default function RootLayout() {
               <Stack.Screen name="expense/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="payment/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="balance/[groupId]" />
+              <Stack.Screen name="notifications" options={{ headerShown: false }} />
               <Stack.Screen
                 name="add-expense"
                 options={{
