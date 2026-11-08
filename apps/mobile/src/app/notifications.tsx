@@ -19,7 +19,11 @@ function Row({ n }: { n: AppNotification }) {
   const summaries = useGroupSummaries();
   const reminder = n.kind === 'settle_reminder';
 
+  // Notifications stay after you leave or are removed from a group, but there's nothing to open.
+  const inGroup = summaries.some((s) => s.group.id === n.group.id);
+
   function open() {
+    if (!inGroup) return;
     if (reminder) {
       // Straight to Settle up with what you owe now; if you've already settled, the group instead.
       const mine = summaries.find((s) => s.group.id === n.group.id)?.transfers.find((t) => t.fromUserId === myId);
@@ -42,8 +46,9 @@ function Row({ n }: { n: AppNotification }) {
 
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityRole={inGroup ? 'button' : 'text'}
       onPress={open}
+      disabled={!inGroup}
       android_ripple={{ color: c.surfaceAlt }}
       style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
       <GroupIcon group={n.group} size={44} />
@@ -52,6 +57,22 @@ function Row({ n }: { n: AppNotification }) {
           <Text variant="body">
             {bold(n.actorName)} reminded you to settle up in {bold(n.group.name)}
             {n.amount ? ` · You owe ${formatMoney(n.amount, n.group.currency)}` : ''}
+          </Text>
+        ) : n.kind === 'made_co_owner' ? (
+          <Text variant="body">
+            {bold(n.actorName)} made you a co-owner of {bold(n.group.name)} · You can now see everything in this group
+          </Text>
+        ) : n.kind === 'removed_from_group' ? (
+          <Text variant="body">
+            {bold(n.actorName)} removed you from {bold(n.group.name)}
+          </Text>
+        ) : n.kind === 'group_settled' ? (
+          <Text variant="body">
+            {bold(n.group.name)} is all settled up · Everyone’s square
+          </Text>
+        ) : n.kind === 'removed_co_owner' ? (
+          <Text variant="body">
+            {bold(n.actorName)} removed you as co-owner of {bold(n.group.name)} · You’ll now see only items you added
           </Text>
         ) : (
           <Text variant="body">
@@ -89,7 +110,7 @@ export default function NotificationsScreen() {
         {data.length === 0 ? (
           <Card>
             <Text muted>
-              {isLoading ? 'Loading…' : 'Nothing yet. You’ll see it here when someone adds you to a group or reminds you to settle up.'}
+              {isLoading ? 'Loading…' : 'Nothing yet. Updates about your groups, like being added or reminded to settle up, show up here.'}
             </Text>
           </Card>
         ) : (

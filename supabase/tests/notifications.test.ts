@@ -93,9 +93,9 @@ describe('Notifications', () => {
     expect((await notes(bob))[0].read_at).not.toBeNull();
   });
 
-  it('being added back after leaving notifies you again; groups you left are hidden', async () => {
+  it('being added back after leaving notifies you again; past notifications stay after you leave', async () => {
     await bob.client.rpc('leave_group', { p_group_id: tripId });
-    expect(await notes(bob)).toEqual([]);
+    expect(await notes(bob)).toHaveLength(1);
     await alice.client.rpc('add_members', {
       p_group_id: tripId,
       p_user_ids: [bob.id],
@@ -161,5 +161,64 @@ describe('Settle-up reminders', () => {
     const { data } = await owner.client.rpc('group_reminders', { p_group_id: groupId });
     expect(data.map((r: { user_id: string }) => r.user_id)).toEqual([member.id]);
     expect((await member.client.rpc('group_reminders', { p_group_id: groupId })).data).toEqual([]);
+  });
+});
+
+describe('Removed and settled notifications', () => {
+  let owner: Awaited<ReturnType<typeof signUp>>;
+  let payer: Awaited<ReturnType<typeof signUp>>;
+  let third: Awaited<ReturnType<typeof signUp>>;
+  let groupId: string;
+  const kinds = async (who: typeof owner, kind: string) => (await notes(who)).filter((n) => n.group_id === groupId && n.kind === kind);
+
+  beforeAll(async () => {
+    [owner, payer, third] = await Promise.all([signUp('SetOwner'), signUp('SetPayer'), signUp('SetThird')]);
+    const { data: g } = await owner.client.rpc('create_group', { p_name: 'Cabin', p_currency: 'AUD' });
+    groupId = g.id;
+    for (const who of [payer, third]) {
+      const { data: t } = await owner.client.rpc('create_invite', { p_group_id: groupId });
+      await who.client.rpc('accept_invite', { p_token: t });
+    }
+    // Owner paid 40.00 for themselves and the payer: the payer owes 20.00. Third is square.
+    await owner.client.rpc('create_expense', {
+      p_group_id: groupId,
+      p_description: 'Wood',
+      p_amount_cents: 4000,
+      p_payer_id: owner.id,
+      p_split_method: 'equal',
+      p_splits: [
+        { user_id: owner.id, amount_cents: 2000 },
+        { user_id: payer.id, amount_cents: 2000 },
+      ],
+    });
+  });
+
+  it('a part payment does not say the group is settled', async () => {
+    const { data: id } = await payer.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: payer.id, p_to_user_id: owner.id, p_amount_cents: 500 });
+    expect(id).toBeTruthy();
+    expect(await kinds(owner, 'group_settled')).toEqual([]);
+  });
+
+  it('the payment that squares everyone tells everyone except whoever recorded it, once', async () => {
+    const { data: last } = await payer.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: payer.id, p_to_user_id: owner.id, p_amount_cents: 1000 });
+    // Correcting the last payment to the full amount settles the group.
+    expect((await payer.client.rpc('correct_settlement', { p_settlement_id: last, p_amount_cents: 1500 })).error).toBeNull();
+    expect(await kinds(owner, 'group_settled')).toHaveLength(1);
+    expect(await kinds(third, 'group_settled')).toHaveLength(1);
+    expect(await kinds(payer, 'group_settled')).toEqual([]);
+  });
+
+  it('being removed by the owner notifies you, even though you are no longer in the group', async () => {
+    expect((await owner.client.rpc('remove_member', { p_group_id: groupId, p_user_id: third.id })).error).toBeNull();
+    const list = await kinds(third, 'removed_from_group');
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ actor_name: 'SetOwner', group_name: 'Cabin' });
+    // Notices from while they were in the group stay: it's their history.
+    expect(await kinds(third, 'group_settled')).toHaveLength(1);
+  });
+
+  it('leaving yourself does not notify you', async () => {
+    expect((await payer.client.rpc('leave_group', { p_group_id: groupId })).error).toBeNull();
+    expect(await kinds(payer, 'removed_from_group')).toEqual([]);
   });
 });

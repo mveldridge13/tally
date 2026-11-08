@@ -603,7 +603,7 @@ export async function createInvite(groupId: string, guestId?: string): Promise<s
 
 export interface AppNotification {
   id: string;
-  kind: 'added_to_group' | 'settle_reminder';
+  kind: 'added_to_group' | 'settle_reminder' | 'made_co_owner' | 'removed_co_owner' | 'removed_from_group' | 'group_settled';
   group: { id: string; name: string; icon: string | null; currency: string };
   actorName: string;
   /** settle_reminder: what you owed when reminded, in the group's currency. */

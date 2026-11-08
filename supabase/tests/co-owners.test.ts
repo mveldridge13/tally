@@ -94,6 +94,18 @@ describe('Co-owners', () => {
     expect(await descriptions(bob)).toEqual([]);
   });
 
+  it('notifies the person when they are made or removed as co-owner, once per change', async () => {
+    // Removing again changes nothing, so no extra notification.
+    expect((await setCoOwner(alice, bob.id, false)).error).toBeNull();
+    const kinds = ((await bob.client.rpc('my_notifications')).data as { kind: string; group_id: string; actor_name: string }[])
+      .filter((n) => n.group_id === groupId && n.kind.endsWith('co_owner'))
+      .map((n) => ({ kind: n.kind, actor: n.actor_name }));
+    expect(kinds).toEqual([
+      { kind: 'removed_co_owner', actor: 'CoAlice' },
+      { kind: 'made_co_owner', actor: 'CoAlice' },
+    ]);
+  });
+
   it('a guest cannot be a co-owner, and the owner cannot co-own their own group', async () => {
     const { data: guestId } = await alice.client.rpc('add_guest', { p_group_id: groupId, p_name: 'Dee' });
     expect((await setCoOwner(alice, guestId, true)).error?.message).toMatch(/guest/);
