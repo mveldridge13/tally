@@ -33,7 +33,13 @@ export interface Group {
   myRole: GroupRole;
 }
 
+/** 'admin' is shown as "Co-owner": sees everything like the owner, but can't manage the group. */
 export type GroupRole = 'owner' | 'admin' | 'member';
+
+/** Owners and co-owners see every expense, payment and balance in the group. */
+export function seesEverything(role: GroupRole | undefined): boolean {
+  return role === 'owner' || role === 'admin';
+}
 
 export interface ExpenseSplit extends SplitShare {
   /** Input that produced the share: basis points (percentage) or units (shares); null otherwise. */
@@ -225,10 +231,10 @@ export function useNameOf() {
 
 export interface GroupSummary {
   group: Group;
-  /** You own the group, so you see everything in it. */
-  isOwner: boolean;
+  /** You own or co-own the group, so you see everything in it. */
+  seesAll: boolean;
   /**
-   * Owner: every member's balance in the group.
+   * Owner or co-owner: every member's balance in the group.
    * Member: your balance, and for everyone else what's owed between the two of you
    * (positive = you owe them, negative = they owe you), from the transfers you're in.
    */
@@ -254,9 +260,9 @@ const NO_LEDGER: GroupLedger = { myBalance: 0, myShare: 0, totalSpent: null, bal
 
 export function summarizeGroup(group: Group, ledger: GroupLedger | undefined, myId: string): GroupSummary {
   const l = ledger ?? NO_LEDGER;
-  const isOwner = group.myRole === 'owner';
+  const seesAll = seesEverything(group.myRole);
   let balances: Balances = l.balances;
-  if (!isOwner) {
+  if (!seesAll) {
     // Members only get the lines that include them: show each person what's between you two.
     balances = new Map(group.memberIds.map((id) => [id, 0]));
     balances.set(myId, l.myBalance);
@@ -265,7 +271,7 @@ export function summarizeGroup(group: Group, ledger: GroupLedger | undefined, my
       else if (t.toUserId === myId) balances.set(t.fromUserId, (balances.get(t.fromUserId) ?? 0) - t.amount);
     }
   }
-  return { group, isOwner, balances, myBalance: l.myBalance, transfers: l.transfers, myShare: l.myShare, totalSpent: l.totalSpent };
+  return { group, seesAll, balances, myBalance: l.myBalance, transfers: l.transfers, myShare: l.myShare, totalSpent: l.totalSpent };
 }
 
 /** Net balance per currency. Different currencies are never added together. */
@@ -424,6 +430,14 @@ export function useRemoveMember() {
 export function useTransferOwnership() {
   return useInvalidating(async (input: { groupId: string; userId: string }) => {
     const { error } = await supabase.rpc('transfer_ownership', { p_group_id: input.groupId, p_new_owner_id: input.userId });
+    if (error) throw error;
+  });
+}
+
+/** Owner only: make a member a co-owner, or a co-owner a member again. Guests can't be co-owners. */
+export function useSetCoOwner() {
+  return useInvalidating(async (input: { groupId: string; userId: string; coOwner: boolean }) => {
+    const { error } = await supabase.rpc('set_co_owner', { p_group_id: input.groupId, p_user_id: input.userId, p_co_owner: input.coOwner });
     if (error) throw error;
   });
 }

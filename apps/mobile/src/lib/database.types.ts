@@ -602,6 +602,7 @@ export type Database = {
       remove_member: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       remove_payid: { Args: Record<PropertyKey, never>; Returns: undefined };
       require_user: { Args: Record<PropertyKey, never>; Returns: string };
+      set_co_owner: { Args: { p_co_owner: boolean; p_group_id: string; p_user_id: string }; Returns: undefined };
       set_group_icon: { Args: { p_group_id: string; p_icon: string }; Returns: undefined };
       set_payid: { Args: { p_account_name?: string; p_type: string; p_value: string }; Returns: undefined };
       shares_group_with: { Args: { p_user_id: string }; Returns: boolean };

@@ -12,6 +12,7 @@ import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import {
+  seesEverything,
   useAddGuest,
   useAddMembers,
   useDeleteGroup,
@@ -58,9 +59,9 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const leaveGroup = useLeaveGroup();
   const { data: partners } = useSplitPartners();
   const picked = useSelection();
-  // Owner only: settle-up reminders, one per person per day.
-  const ownsGroup = data.groups.find((g) => g.id === id)?.myRole === 'owner';
-  const recentlyReminded = useRecentlyReminded(id, ownsGroup);
+  // Owner and co-owners: settle-up reminders, one per person per day.
+  const canRemind = seesEverything(data.groups.find((g) => g.id === id)?.myRole);
+  const recentlyReminded = useRecentlyReminded(id, canRemind);
   const remind = useRemindToSettle();
   const [justReminded, setJustReminded] = useState<ReadonlySet<string>>(new Set());
 
@@ -265,8 +266,13 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
                   <Text variant="caption" color={bal === 0 ? c.textMuted : balanceColor(c, bal)} numberOfLines={1}>
                     {bal === 0 ? 'square' : `${bal > 0 ? '+' : '−'}${money(bal)}`}
                   </Text>
-                  {/* Owner only: nudge someone who owes. Guests have no app to receive it. */}
-                  {isOwner && !isMe && !guest && bal < 0 ? (
+                  {group.roles[uid] === 'admin' ? (
+                    <Text variant="caption" muted numberOfLines={1} style={{ fontSize: 11 }}>
+                      Co-owner
+                    </Text>
+                  ) : null}
+                  {/* Owner and co-owners: nudge someone who owes. Guests have no app to receive it. */}
+                  {canRemind && !isMe && !guest && bal < 0 ? (
                     remindedToday(uid) ? (
                       <Text variant="caption" muted style={{ marginTop: 2 }}>
                         Reminded
@@ -362,10 +368,10 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
         <View style={{ gap: space.md }}>
           <View style={{ gap: 2 }}>
             <SectionTitle title="Expenses" />
-            {summary.isOwner ? null : (
+            {summary.seesAll ? null : (
               <Gutter>
                 <Text variant="caption" muted>
-                  Only items you added are shown. The owner sees everything.
+                  Only items you added are shown. The owner and co-owners see everything.
                 </Text>
               </Gutter>
             )}

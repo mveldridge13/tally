@@ -7,7 +7,7 @@ import { CardFigure, Gutter, HeroScreen, onDeepMuted, oweOnDeep, SectionTitle } 
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { PayIdCard } from '@/components/payid-card';
-import { PAYID_CURRENCY, useNameOf, useRemoveMember, useTallyData, useTransferOwnership } from '@/lib/data';
+import { PAYID_CURRENCY, useNameOf, useRemoveMember, useSetCoOwner, useTallyData, useTransferOwnership } from '@/lib/data';
 import { sendInvite } from '@/lib/invite';
 import { relativeTime } from '@/lib/format';
 import { useGroupSummary } from '@/store/hooks';
@@ -27,6 +27,7 @@ export default function BalanceBreakdownScreen() {
   const summary = useGroupSummary(groupId);
   const removeMember = useRemoveMember();
   const transferOwnership = useTransferOwnership();
+  const setCoOwner = useSetCoOwner();
 
   const expenses = useMemo(() => data.expenses.filter((e) => e.groupId === groupId), [data.expenses, groupId]);
   const settlements = useMemo(() => data.settlements.filter((s) => s.groupId === groupId), [data.settlements, groupId]);
@@ -47,18 +48,18 @@ export default function BalanceBreakdownScreen() {
   }, [summary, expenses, settlements, myId]);
 
   // Members only see their own items, so what's between you and each person comes from the
-  // server's balances (positive there = you owe them); the owner sees every item and adds them up.
-  const isOwner = !!summary?.isOwner;
+  // server's balances (positive there = you owe them); owners and co-owners see every item and add them up.
+  const seesAll = !!summary?.seesAll;
   const serverPair = (id: string): Cents => -(summary?.balances.get(id) ?? 0);
 
   const perPerson = useMemo(
     () =>
       others
-        .map((id) => ({ id, total: isOwner ? pairBreakdown(myId, id, expenses, settlements).total : serverPair(id) }))
+        .map((id) => ({ id, total: seesAll ? pairBreakdown(myId, id, expenses, settlements).total : serverPair(id) }))
         .sort((a, b) => Math.abs(b.total) - Math.abs(a.total)),
     // serverPair reads summary, which is listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [others, myId, expenses, settlements, isOwner, summary],
+    [others, myId, expenses, settlements, seesAll, summary],
   );
 
   const pair = useMemo(() => {
@@ -83,9 +84,9 @@ export default function BalanceBreakdownScreen() {
         return { key: x.id, kind: e.kind, id: x.id, at: x.occurredAt, amount: e.amount, title: '', payerId: x.fromUserId, total: x.amount };
       })
       .sort((a, b) => (a.at < b.at ? 1 : -1));
-    return { rows, total: isOwner ? total : serverPair(otherId) };
+    return { rows, total: seesAll ? total : serverPair(otherId) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otherId, myId, expenses, settlements, isOwner, summary]);
+  }, [otherId, myId, expenses, settlements, seesAll, summary]);
 
   if (!summary) {
     return (
@@ -135,7 +136,8 @@ export default function BalanceBreakdownScreen() {
     const isMember = group.memberIds.includes(otherId);
     const canManage = group.myRole === 'owner' && isMember && otherId !== myId;
     const theirGroupBalance = balances.get(otherId) ?? 0;
-    const memberError = removeMember.error ?? transferOwnership.error;
+    const memberError = removeMember.error ?? transferOwnership.error ?? setCoOwner.error;
+    const isCoOwner = group.roles[otherId] === 'admin';
     const isGuest = !!data.people[otherId]?.isGuest;
     // PayID is Australian: only offered in AUD groups.
     const theirPayId = group.currency === PAYID_CURRENCY ? data.payIds[otherId] : undefined;
@@ -155,6 +157,20 @@ export default function BalanceBreakdownScreen() {
           { text: 'Make owner', onPress: () => transferOwnership.mutate({ groupId: group.id, userId: otherId }) },
         ],
       );
+    const toggleCoOwner = () =>
+      isCoOwner
+        ? Alert.alert(`Remove ${they} as co-owner?`, `${they} will only see the items they added, like other members.`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Remove', onPress: () => setCoOwner.mutate({ groupId: group.id, userId: otherId, coOwner: false }) },
+          ])
+        : Alert.alert(
+            `Make ${they} a co-owner?`,
+            `${they} will see every expense, payment and balance in this group, and can send settle-up reminders. Only you can remove people or delete the group.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Make co-owner', onPress: () => setCoOwner.mutate({ groupId: group.id, userId: otherId, coOwner: true }) },
+            ],
+          );
     const remove = () => {
       if (theirGroupBalance !== 0) {
         Alert.alert(
@@ -194,9 +210,9 @@ export default function BalanceBreakdownScreen() {
         <View style={{ gap: space.md }}>
           <SectionTitle title={`What makes up this balance · ${pair.rows.length}`} />
           <Gutter>
-            {isOwner ? null : (
+            {seesAll ? null : (
               <Text variant="caption" muted>
-                Only items you added are shown. The owner sees everything.
+                Only items you added are shown. The owner and co-owners see everything.
               </Text>
             )}
             <Card style={{ paddingVertical: pair.rows.length ? 0 : space.lg }}>
@@ -289,7 +305,15 @@ export default function BalanceBreakdownScreen() {
           {canManage ? (
             <>
               {isGuest ? null : (
-                <Button kind="secondary" label={`Make ${they} the owner`} onPress={makeOwner} loading={transferOwnership.isPending} />
+                <>
+                  <Button
+                    kind="secondary"
+                    label={isCoOwner ? `Remove ${they} as co-owner` : `Make ${they} a co-owner`}
+                    onPress={toggleCoOwner}
+                    loading={setCoOwner.isPending}
+                  />
+                  <Button kind="secondary" label={`Make ${they} the owner`} onPress={makeOwner} loading={transferOwnership.isPending} />
+                </>
               )}
               <Button kind="secondary" label={`Remove ${they} from the group`} onPress={remove} loading={removeMember.isPending} />
             </>

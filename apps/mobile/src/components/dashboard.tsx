@@ -600,7 +600,7 @@ export function GroupListCard({
           {people} · {group.currency}
           {lastActivity ? ` · ${relativeTime(lastActivity)}` : ''}
         </Text>
-        {group.myRole === 'owner' ? (
+        {group.myRole === 'owner' || group.myRole === 'admin' ? (
           <View
             style={{
               alignSelf: 'flex-start',
@@ -611,7 +611,7 @@ export function GroupListCard({
               marginTop: 2,
             }}>
             <Text variant="caption" style={{ fontSize: 11, fontWeight: '600' }}>
-              Owner
+              {group.myRole === 'owner' ? 'Owner' : 'Co-owner'}
             </Text>
           </View>
         ) : null}
