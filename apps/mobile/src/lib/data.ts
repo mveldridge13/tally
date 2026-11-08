@@ -84,7 +84,7 @@ export interface Profile {
   createdAt: string;
 }
 
-/** A saved PayID (Australia only). Visible to its owner and to people who share a group with them. */
+/** A saved PayID (Australia only). Visible to its owner and to members of groups they own. */
 export interface PayId {
   type: PayIdType;
   /** Stored normalised: +614XXXXXXXX, a lower-case email, or 11 ABN digits. */
@@ -94,7 +94,7 @@ export interface PayId {
 
 export interface TallyData {
   me: Profile | null;
-  /** PayIDs by user id, for you and the people in your groups who have added one. */
+  /** PayIDs by user id: yours, and those of the owners of your groups. */
   payIds: Record<string, PayId>;
   people: Record<string, Person>;
   groups: Group[];
@@ -137,7 +137,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
       .eq('settlements.status', 'recorded')
       .order('created_at', { ascending: false }),
     supabase.from('profiles').select('id, name, currency, currency_chosen, created_at').eq('id', myId).maybeSingle(),
-    // RLS returns only your own PayID and those of people you share a group with.
+    // RLS returns only your own PayID and those of the owners of groups you're in.
     supabase.from('payment_methods').select('user_id, payid_type, value, account_name').eq('kind', 'payid'),
     supabase.rpc('my_group_summaries'),
   ]);

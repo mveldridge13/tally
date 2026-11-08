@@ -74,8 +74,10 @@ export default function SettleScreen() {
 
   const money = (v: number) => formatMoney(v, group.currency);
   const valid = Number.isFinite(cents) && cents > 0;
-  // When you're the one paying in an AUD group, show the recipient's PayID to copy into your bank.
-  const recipientPayId = group.currency === PAYID_CURRENCY && from === myId && to ? data.payIds[to] : undefined;
+  // When you're paying the group owner in an AUD group, show their PayID to copy into your bank.
+  // Only the owner's PayID is shared; members' stay private.
+  const recipientPayId =
+    group.currency === PAYID_CURRENCY && from === myId && to && group.roles[to] === 'owner' ? data.payIds[to] : undefined;
   const over = valid && suggested > 0 && cents > suggested;
   const partial = valid && suggested > 0 && cents < suggested;
 

@@ -75,13 +75,17 @@ export function Button({
   kind = 'primary',
   disabled,
   loading,
+  size = 'regular',
 }: {
   label: string;
   onPress: () => void;
   kind?: ButtonKind;
   disabled?: boolean;
   loading?: boolean;
+  /** 'small': a compact pill for secondary actions that sit side by side. */
+  size?: 'regular' | 'small';
 }) {
+  const small = size === 'small';
   const c = useColors();
   const styles: Record<ButtonKind, { bg: string; fg: string; border?: string }> = {
     primary: { bg: c.primary, fg: c.onPrimary },
@@ -112,16 +116,16 @@ export function Button({
         borderColor: k.border,
         opacity: disabled && !loading ? 0.5 : 1,
         borderRadius: radius.pill,
-        minHeight: 54,
-        paddingHorizontal: space.xl,
+        minHeight: small ? 40 : 54,
+        paddingHorizontal: small ? space.lg : space.xl,
         alignItems: 'center',
         justifyContent: 'center',
         flexDirection: 'row',
         gap: space.sm,
         overflow: 'hidden',
       }}>
-      {loading ? <ActivityIndicator color={k.fg} /> : null}
-      <Text variant="heading" color={k.fg}>
+      {loading ? <ActivityIndicator color={k.fg} size={small ? 'small' : undefined} /> : null}
+      <Text variant={small ? 'label' : 'heading'} color={k.fg}>
         {label}
       </Text>
     </Pressable>

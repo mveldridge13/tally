@@ -52,11 +52,19 @@ describe('PayID details', () => {
     expect((await sam.client.rpc('set_payid', { p_type: 'abn', p_value: '51824753556' })).error).toBeNull(); // ATO example
   });
 
-  it('is visible to people in your groups, and to nobody else', async () => {
+  it('the owner’s PayID is visible to members of their group, and to nobody else', async () => {
     const seenByFriend = await friend.client.from('payment_methods').select('value').eq('user_id', sam.id);
     const seenByStranger = await stranger.client.from('payment_methods').select('value').eq('user_id', sam.id);
     expect(seenByFriend.data).toEqual([{ value: '51824753556' }]);
     expect(seenByStranger.data).toEqual([]);
+  });
+
+  it('a member’s PayID stays private, even from the owner', async () => {
+    await friend.client.from('profiles').update({ currency: 'AUD' }).eq('id', friend.id);
+    expect((await friend.client.rpc('set_payid', { p_type: 'phone', p_value: '+61498765432' })).error).toBeNull();
+    expect((await sam.client.from('payment_methods').select('value').eq('user_id', friend.id)).data).toEqual([]);
+    // Friend can still read their own.
+    expect((await friend.client.from('payment_methods').select('value').eq('user_id', friend.id)).data).toEqual([{ value: '+61498765432' }]);
   });
 
   it('cannot be written directly or changed by someone else', async () => {

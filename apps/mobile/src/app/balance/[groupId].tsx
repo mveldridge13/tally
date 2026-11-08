@@ -139,8 +139,8 @@ export default function BalanceBreakdownScreen() {
     const memberError = removeMember.error ?? transferOwnership.error ?? setCoOwner.error;
     const isCoOwner = group.roles[otherId] === 'admin';
     const isGuest = !!data.people[otherId]?.isGuest;
-    // PayID is Australian: only offered in AUD groups.
-    const theirPayId = group.currency === PAYID_CURRENCY ? data.payIds[otherId] : undefined;
+    // PayID is Australian: only offered in AUD groups, and only the group owner's is shared.
+    const theirPayId = group.currency === PAYID_CURRENCY && group.roles[otherId] === 'owner' ? data.payIds[otherId] : undefined;
 
     /** Share an invite tied to this guest: when they accept, their history in the group becomes theirs. */
     const inviteGuest = () =>
@@ -302,21 +302,23 @@ export default function BalanceBreakdownScreen() {
               </Text>
             </>
           ) : null}
+          {/* Owner only: managing this person, as small pills side by side. */}
           {canManage ? (
-            <>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
               {isGuest ? null : (
                 <>
                   <Button
                     kind="secondary"
-                    label={isCoOwner ? `Remove ${they} as co-owner` : `Make ${they} a co-owner`}
+                    size="small"
+                    label={isCoOwner ? 'Remove co-owner' : 'Make co-owner'}
                     onPress={toggleCoOwner}
                     loading={setCoOwner.isPending}
                   />
-                  <Button kind="secondary" label={`Make ${they} the owner`} onPress={makeOwner} loading={transferOwnership.isPending} />
+                  <Button kind="secondary" size="small" label="Make owner" onPress={makeOwner} loading={transferOwnership.isPending} />
                 </>
               )}
-              <Button kind="secondary" label={`Remove ${they} from the group`} onPress={remove} loading={removeMember.isPending} />
-            </>
+              <Button kind="secondary" size="small" label="Remove from group" onPress={remove} loading={removeMember.isPending} />
+            </View>
           ) : null}
           {memberError ? <Notice>{memberError.message}</Notice> : null}
           {!isMember ? (

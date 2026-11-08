@@ -96,7 +96,7 @@ export default function ProfileScreen() {
   }
 
   function confirmRemovePayId() {
-    Alert.alert('Remove your PayID?', 'People in your groups will no longer see it.', [
+    Alert.alert('Remove your PayID?', 'Members of groups you own will no longer see it.', [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Remove', style: 'destructive', onPress: () => removePayId.mutate(undefined, { onSuccess: () => setEditing(null) }) },
     ]);
@@ -240,8 +240,8 @@ export default function ProfileScreen() {
               {editing === 'payid' ? (
                 <View style={{ gap: space.md, paddingBottom: space.lg }}>
                   <Text variant="caption" muted>
-                    People in your AUD groups will see this so they can copy it into their banking app to pay you back. Tally never moves
-                    money.
+                    Only shared in AUD groups you own: members see it so they can copy it into their banking app to pay you back. Tally
+                    never moves money.
                   </Text>
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
                     {PAYID_TYPES.map((t) => (
