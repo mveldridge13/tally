@@ -12,9 +12,11 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, TextInput, View, type TextInputInstance } from 'react-native';
 import { KeyboardController } from 'react-native-keyboard-controller';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
 import { Gutter, HeroScreen, onDeepMuted } from '@/components/dashboard';
 import { GroupIcon, Sheet } from '@/components/friendly';
+import { buzz } from '@/components/fun';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useCreateExpense, useNameOf, useTallyData, useUpdateExpense, type Expense } from '@/lib/data';
@@ -174,6 +176,8 @@ export default function ExpenseFormScreen() {
   const params = useLocalSearchParams<{
     groupId?: string;
     expenseId?: string;
+    /** Set by New group when it was opened from this form: switch to the group just made. */
+    newGroupId?: string;
   }>();
   const myId = useMyId();
   const { data } = useTallyData();
@@ -203,6 +207,18 @@ export default function ExpenseFormScreen() {
   const [method, setMethod] = useState<SplitMethod>(editing?.method ?? 'equal');
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
+  function pickGroup(id: string) {
+    setGroupId(id);
+    setPayerId(myId);
+    setIncluded({});
+    setValues({});
+  }
+  // Back from New group with a fresh group: use it (keeps the amount and description already typed).
+  const [seenNewGroup, setSeenNewGroup] = useState(params.newGroupId);
+  if (params.newGroupId && params.newGroupId !== seenNewGroup) {
+    setSeenNewGroup(params.newGroupId);
+    pickGroup(params.newGroupId);
+  }
   const [sheet, setSheet] = useState<'split' | 'group' | null>(null);
   // Close the keyboard (and wait until it's gone) before a sheet slides up. Otherwise the keyboard
   // closing tugs the sheet back down mid-slide, which shows as a flicker.
@@ -213,6 +229,11 @@ export default function ExpenseFormScreen() {
 
   // Open the keypad once the form has slid up, not during the animation.
   const amountRef = useRef<TextInputInstance>(null);
+  const descriptionRef = useRef<TextInputInstance>(null);
+  // Save stays tappable when only the description is missing: tapping it shakes the box and jumps in.
+  const [triedSave, setTriedSave] = useState(false);
+  const shake = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.get() }] }));
   useAfterTransition(() => amountRef.current?.focus(), !isEdit);
 
   const isIncluded = (id: string) => included[id] ?? true;
@@ -315,11 +336,25 @@ export default function ExpenseFormScreen() {
       : !preview.ok
         ? (remaining ?? preview.error)
         : !description.trim()
-          ? 'Add a description'
+          ? 'Add what it was for'
           : null;
   const canSave = !blocker && !mutation.isPending;
 
   function save() {
+    if (!description.trim()) {
+      setTriedSave(true);
+      buzz.nudge();
+      shake.set(
+        withSequence(
+          withTiming(-10, { duration: 50 }),
+          withTiming(10, { duration: 70 }),
+          withTiming(-6, { duration: 60 }),
+          withTiming(0, { duration: 60 }),
+        ),
+      );
+      descriptionRef.current?.focus();
+      return;
+    }
     if (!group || typeof splitInput === 'string' || !preview.ok) return;
     const input = {
       description: description.trim(),
@@ -346,7 +381,10 @@ export default function ExpenseFormScreen() {
       : `Split ${methodWords[method]} between ${n} ${n === 1 ? 'person' : 'people'}`;
   // Only flag split problems here; a missing amount or description is obvious on the form.
   const splitProblem = amountText && Number.isFinite(amount) && amount > 0 && !preview.ok ? (remaining ?? preview.error) : null;
-  const canPickGroup = !isEdit && !params.groupId && groups.length > 1;
+  const canPickGroup = !isEdit && !params.groupId;
+  // Once there's an amount, the description is the last thing standing between you and Save: flag it.
+  const needsDescription = (!!amountText || triedSave) && !description.trim();
+  const onlyDescriptionMissing = blocker === 'Add what it was for';
 
   const card = (
     <>
@@ -402,28 +440,37 @@ export default function ExpenseFormScreen() {
         />
       </View>
 
-      {/* Description */}
-      <TextInput
-        value={description}
-        onChangeText={setDescription}
-        placeholder="What was it for?"
-        placeholderTextColor="rgba(255,255,255,0.5)"
-        maxLength={120}
-        selectionColor={brand.accent}
-        cursorColor={brand.accent}
-        accessibilityLabel="What was it for?"
-        style={{
-          ...type.body,
-          fontSize: 18,
-          marginTop: space.xl,
-          color: brand.onDeep,
-          backgroundColor: 'rgba(255,255,255,0.08)',
-          borderRadius: radius.lg,
-          paddingHorizontal: space.lg,
-          paddingVertical: space.md + 2,
-          textAlign: 'center',
-        }}
-      />
+      {/* Description (needed to save) */}
+      <View style={{ marginTop: space.xl, gap: space.sm }}>
+        <Text variant="label" color={needsDescription ? brand.coral : brand.onDeep} style={{ textAlign: 'center', fontWeight: '700' }}>
+          What was it for?
+        </Text>
+        <Animated.View style={shakeStyle}>
+          <TextInput
+            ref={descriptionRef}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="e.g. Pizza, Uber, groceries"
+            placeholderTextColor="rgba(255,255,255,0.55)"
+            maxLength={120}
+            selectionColor={brand.accent}
+            cursorColor={brand.accent}
+            accessibilityLabel="What was it for? Needed to save"
+            style={{
+              ...type.body,
+              fontSize: 18,
+              color: brand.onDeep,
+              backgroundColor: 'rgba(255,255,255,0.14)',
+              borderWidth: 2,
+              borderColor: needsDescription ? brand.coral : 'rgba(255,255,255,0.3)',
+              borderRadius: radius.lg,
+              paddingHorizontal: space.lg,
+              paddingVertical: space.md + 2,
+              textAlign: 'center',
+            }}
+          />
+        </Animated.View>
+      </View>
     </>
   );
 
@@ -446,7 +493,7 @@ export default function ExpenseFormScreen() {
             borderRadius: radius.lg,
             backgroundColor: c.surfaceAlt,
             borderWidth: splitProblem ? 1.5 : 0,
-            borderColor: c.owe,
+            borderColor: c.danger,
             overflow: 'hidden',
           }}>
           <Avatar name={name(payerId)} size={40} color={groupColor(payerId)} />
@@ -461,7 +508,7 @@ export default function ExpenseFormScreen() {
           </Text>
         </Pressable>
         {splitProblem ? (
-          <Text variant="label" color={c.owe}>
+          <Text variant="label" color={c.danger}>
             {splitProblem}. Tap above to fix it.
           </Text>
         ) : null}
@@ -469,12 +516,12 @@ export default function ExpenseFormScreen() {
 
       <Gutter>
         {mutation.isError ? <Notice>{mutation.error.message}</Notice> : null}
-        <Button label={isEdit ? 'Save changes' : 'Save'} onPress={save} disabled={!canSave} loading={mutation.isPending} />
-        {blocker && !splitProblem ? (
-          <Text variant="caption" muted style={{ textAlign: 'center' }}>
-            {blocker}
-          </Text>
-        ) : null}
+        <Button
+          label={isEdit ? 'Save changes' : 'Save'}
+          onPress={save}
+          disabled={!canSave && !(onlyDescriptionMissing && !mutation.isPending)}
+          loading={mutation.isPending}
+        />
       </Gutter>
 
       {/* Who paid and how to split it */}
@@ -484,7 +531,7 @@ export default function ExpenseFormScreen() {
         footer={
           <>
             {remaining ? (
-              <Text variant="label" color={c.owe} style={{ textAlign: 'center' }}>
+              <Text variant="label" color={c.danger} style={{ textAlign: 'center' }}>
                 {remaining}
               </Text>
             ) : null}
@@ -570,16 +617,46 @@ export default function ExpenseFormScreen() {
       {/* Which group (only when starting from Home with more than one group) */}
       <Sheet visible={sheet === 'group'} onClose={() => setSheet(null)} title="Which group?">
         <View style={{ gap: space.sm }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setSheet(null);
+              router.push({ pathname: '/new-group', params: { forExpense: '1' } });
+            }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space.md,
+              padding: space.md,
+              borderRadius: radius.lg,
+              borderWidth: 1.5,
+              borderStyle: 'dashed',
+              borderColor: c.border,
+            }}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: c.surfaceAlt,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+              <Text variant="heading" color={c.primary}>
+                ＋
+              </Text>
+            </View>
+            <Text variant="heading" color={c.primary} style={{ flex: 1 }}>
+              New group
+            </Text>
+          </Pressable>
           {groups.map((g) => (
             <Pressable
               key={g.id}
               accessibilityRole="radio"
               accessibilityState={{ selected: g.id === groupId }}
               onPress={() => {
-                setGroupId(g.id);
-                setPayerId(myId);
-                setIncluded({});
-                setValues({});
+                pickGroup(g.id);
                 setSheet(null);
               }}
               style={{

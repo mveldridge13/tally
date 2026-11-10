@@ -2,29 +2,41 @@ import { centsToDecimalString, formatMoney, parseToCents } from '@tally/shared';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 
-import { Gutter, HeroScreen, onDeepMuted, SectionTitle } from '@/components/dashboard';
-import { Avatar, Button, Card, Field, Notice, Text } from '@/components/ui';
+import { Gutter, HeroScreen } from '@/components/dashboard';
+import { Bouncy, buzz, Confetti, MoneyFlow, SlideToConfirm } from '@/components/fun';
+import { Button, Field, Notice, Text } from '@/components/ui';
 import { PayIdCard } from '@/components/payid-card';
 import { useMyId } from '@/lib/auth';
 import { PAYID_CURRENCY, useCorrectSettlement, useNameOf, useRecordSettlement, useTallyData } from '@/lib/data';
-import { brand, radius, space, useColors } from '@/theme';
+import { radius, space, useColors } from '@/theme';
 
-function Party({ who, role }: { who: string; role: string }) {
+function AmountChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const c = useColors();
   return (
-    <View style={{ alignItems: 'center', gap: space.sm, flex: 1 }}>
-      <Avatar name={who} size={52} color={brand.tintOnDeep} />
-      <Text variant="label" color={brand.onDeep} numberOfLines={1}>
-        {who}
+    <Bouncy
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={{
+        paddingVertical: space.sm + 2,
+        paddingHorizontal: space.lg,
+        borderRadius: radius.pill,
+        backgroundColor: selected ? c.primary : c.surfaceAlt,
+      }}>
+      <Text variant="label" color={selected ? c.onPrimary : c.text} style={{ fontVariant: ['tabular-nums'] }}>
+        {label}
       </Text>
-      <Text variant="caption" color={onDeepMuted}>
-        {role}
-      </Text>
-    </View>
+    </Bouncy>
   );
 }
 
-/** Records a repayment that happened outside the app. Never edits the original expenses. */
+/**
+ * Pay someone back: "Pay Leo back $18.25", slide when it's done, confetti.
+ * Records a repayment that happened outside the app; Tally never moves money and never edits the
+ * original expenses. With `paymentId` it corrects an existing payment instead (plain form, Save button).
+ */
 export default function SettleScreen() {
   const c = useColors();
   const params = useLocalSearchParams<{
@@ -53,6 +65,11 @@ export default function SettleScreen() {
   const suggested = isEdit ? 0 : Number(params.amount) || 0;
   const [text, setText] = useState(editing ? centsToDecimalString(editing.amount) : suggested ? centsToDecimalString(suggested) : '');
   const [note, setNote] = useState(editing?.note ?? '');
+  // The full amount is filled in; other amounts and a note are one tap away.
+  const [changing, setChanging] = useState(isEdit || !suggested);
+  const [noting, setNoting] = useState(!!editing?.note);
+  const [paid, setPaid] = useState<number | null>(null);
+  const [confetti, setConfetti] = useState(0);
 
   let cents = 0;
   try {
@@ -63,7 +80,7 @@ export default function SettleScreen() {
 
   if (!group || !from || !to) {
     return (
-      <HeroScreen nav="close" title={isEdit ? 'Correct payment' : 'Record a payment'}>
+      <HeroScreen nav="close" title={isEdit ? 'Correct payment' : 'Pay back'}>
         <Stack.Screen options={{ headerShown: false }} />
         <Gutter>
           <Notice tone="info">{isEdit ? 'This payment was already changed or undone.' : 'There’s nothing to settle here.'}</Notice>
@@ -74,14 +91,23 @@ export default function SettleScreen() {
 
   const money = (v: number) => formatMoney(v, group.currency);
   const valid = Number.isFinite(cents) && cents > 0;
+  const fromName = from === myId ? 'You' : name(from);
+  const toName = to === myId ? 'You' : name(to);
   // When you're paying the group owner in an AUD group, show their PayID to copy into your bank.
   // Only the owner's PayID is shared; members' stay private.
   const recipientPayId =
     group.currency === PAYID_CURRENCY && from === myId && to && group.roles[to] === 'owner' ? data.payIds[to] : undefined;
   const over = valid && suggested > 0 && cents > suggested;
   const partial = valid && suggested > 0 && cents < suggested;
-
   const unchanged = isEdit && editing && cents === editing.amount && note.trim() === (editing.note ?? '');
+
+  const title = isEdit
+    ? 'Correct payment'
+    : from === myId
+      ? `Pay ${toName} back`
+      : to === myId
+        ? `${fromName} paid you back`
+        : `${fromName} paid ${toName}`;
 
   function save() {
     if (!valid || !group || !from || !to) return;
@@ -94,143 +120,179 @@ export default function SettleScreen() {
     } else {
       recordSettlement.mutate(
         { groupId: group.id, fromUserId: from, toUserId: to, amount: cents, note },
-        { onSuccess: () => router.back() },
+        {
+          onSuccess: () => {
+            buzz.success();
+            setPaid(cents);
+            setConfetti((n) => n + 1);
+          },
+        },
       );
     }
   }
 
-  const quick = suggested
-    ? [
-        { label: `Full ${money(suggested)}`, value: suggested },
-        {
-          label: `Half ${money(Math.floor(suggested / 2))}`,
-          value: Math.floor(suggested / 2),
-        },
-      ]
-    : [];
-
-  const card = (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Party who={name(from)} role="pays" />
-        <Text style={{ fontSize: 28, color: brand.accent }}>→</Text>
-        <Party who={name(to)} role="receives" />
-      </View>
-      <View style={{ alignItems: 'center', marginTop: space.xl, gap: space.xs }}>
-        <Text variant="label" color={onDeepMuted}>
-          Amount in {group.currency}
-        </Text>
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          placeholder="0.00"
-          placeholderTextColor="rgba(255,255,255,0.35)"
-          keyboardType="decimal-pad"
-          selectionColor={brand.accent}
-          cursorColor={brand.accent}
-          accessibilityLabel="Payment amount"
-          style={{
-            fontSize: 52,
-            fontWeight: '800',
-            letterSpacing: -1,
-            color: brand.onDeep,
-            minWidth: 160,
-            textAlign: 'center',
-            padding: 0,
-            fontVariant: ['tabular-nums'],
-          }}
-        />
-        {suggested ? (
-          <Text variant="caption" color={onDeepMuted}>
-            Outstanding: {money(suggested)}
+  // Done: the celebration.
+  if (paid != null) {
+    const square = suggested > 0 && paid >= suggested;
+    const other = from === myId ? toName : to === myId ? fromName : null;
+    const headline = square
+      ? other
+        ? `You and ${other} are square 🎉`
+        : `${fromName} and ${toName} are square 🎉`
+      : `${money(paid)} paid to ${to === myId ? 'you' : toName} 👏`;
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, gap: space.md }}>
+          <Animated.View
+            entering={ZoomIn.springify().damping(12)}
+            style={{ width: 112, height: 112, borderRadius: 56, backgroundColor: c.warm, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 56, fontWeight: '800' }} color={c.primary}>
+              ✓
+            </Text>
+          </Animated.View>
+          <Animated.View entering={ZoomIn.delay(120).springify().damping(14)}>
+            <Text variant="title" style={{ textAlign: 'center', fontSize: 28, lineHeight: 34 }}>
+              {headline}
+            </Text>
+          </Animated.View>
+          <Text muted style={{ textAlign: 'center' }}>
+            {square || !suggested
+              ? `${money(paid)} · ${group.icon ? `${group.icon} ` : ''}${group.name}`
+              : `${money(suggested - paid)} still to go in ${group.name}.`}
           </Text>
-        ) : null}
+          <Text variant="caption" muted style={{ textAlign: 'center' }}>
+            Recorded wrong? You can undo it from Activity.
+          </Text>
+        </View>
+        <View style={{ padding: space.lg, paddingBottom: space.xxl }}>
+          <Button label="Done" onPress={() => router.back()} />
+        </View>
+        <Confetti fire={confetti} />
       </View>
-    </>
-  );
+    );
+  }
 
   return (
-    <HeroScreen nav="close" eyebrow={group.name} title={isEdit ? 'Correct payment' : 'Record a payment'} card={card}>
+    <HeroScreen nav="close" eyebrow={`${group.icon ? `${group.icon} ` : ''}${group.name}`} title={title}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {quick.length ? (
-        <View style={{ gap: space.md }}>
-          <SectionTitle title="Quick amounts" />
-          <Gutter>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {quick.map((q) => {
-                const selected = cents === q.value;
-                return (
-                  <Pressable
-                    key={q.label}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => setText(centsToDecimalString(q.value))}
-                    style={{
-                      flex: 1,
-                      alignItems: 'center',
-                      paddingVertical: space.md,
-                      borderRadius: radius.md,
-                      borderWidth: selected ? 2 : 1,
-                      borderColor: selected ? c.focus : c.border,
-                      backgroundColor: selected ? c.surfaceAlt : c.surface,
-                    }}>
-                    <Text variant="label">{q.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </Gutter>
+      <Gutter>
+        <MoneyFlow fromId={from} fromName={fromName} toId={to} toName={toName} />
+      </Gutter>
+
+      <Gutter>
+        <View style={{ alignItems: 'center', gap: space.sm }}>
+          {changing ? (
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder="0.00"
+              placeholderTextColor={c.textMuted}
+              keyboardType="decimal-pad"
+              selectionColor={c.focus}
+              cursorColor={c.focus}
+              accessibilityLabel={`Amount in ${group.currency}`}
+              style={{
+                fontSize: 56,
+                fontWeight: '800',
+                letterSpacing: -2,
+                color: c.text,
+                minWidth: 180,
+                textAlign: 'center',
+                padding: 0,
+                fontVariant: ['tabular-nums'],
+              }}
+            />
+          ) : (
+            <Text style={{ fontSize: 60, lineHeight: 68, fontWeight: '800', letterSpacing: -2, fontVariant: ['tabular-nums'] }}>
+              {money(cents)}
+            </Text>
+          )}
+          <Text muted style={{ textAlign: 'center' }}>
+            {isEdit
+              ? `Amount in ${group.currency}`
+              : partial
+                ? `${money(suggested - cents)} will still be left.`
+                : over
+                  ? `That’s more than the ${money(suggested)} owed.`
+                  : suggested
+                    ? 'That clears it. You’ll be square.'
+                    : `Amount in ${group.currency}`}
+          </Text>
+          {suggested && !isEdit ? (
+            changing ? (
+              <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <AmountChip
+                  label={`All ${money(suggested)}`}
+                  selected={cents === suggested}
+                  onPress={() => setText(centsToDecimalString(suggested))}
+                />
+                <AmountChip
+                  label={`Half ${money(Math.ceil(suggested / 2))}`}
+                  selected={cents === Math.ceil(suggested / 2)}
+                  onPress={() => setText(centsToDecimalString(Math.ceil(suggested / 2)))}
+                />
+              </View>
+            ) : (
+              <Pressable accessibilityRole="button" onPress={() => setChanging(true)} hitSlop={8}>
+                <Text variant="label" color={c.focus}>
+                  Pay a different amount
+                </Text>
+              </Pressable>
+            )
+          ) : null}
         </View>
-      ) : null}
+      </Gutter>
 
       {recipientPayId && to ? (
         <Gutter>
           <PayIdCard name={name(to)} payId={recipientPayId} amount={valid ? { cents, currency: group.currency } : undefined} />
           <Text variant="caption" muted>
-            Pay in your banking app, then record the payment here.
+            Pay in your banking app, then slide below.
           </Text>
         </Gutter>
       ) : null}
 
       <Gutter>
         {over ? (
-          <Notice>
-            That’s more than the {money(suggested)} owed. {name(to)} would then owe {name(from) === 'You' ? 'you' : name(from)} the
-            difference.
+          <Notice tone="info">
+            {toName} would then owe {fromName === 'You' ? 'you' : fromName} the difference.
           </Notice>
         ) : null}
-        {partial ? <Notice tone="info">A partial payment. {money(suggested - cents)} will still be outstanding.</Notice> : null}
-        <Field
-          label="Note (optional)"
-          value={note}
-          onChangeText={setNote}
-          placeholder="e.g. Bank transfer, cash at dinner"
-          maxLength={280}
-          returnKeyType="done"
-        />
+        {noting ? (
+          <Field
+            label="Note (optional)"
+            value={note}
+            onChangeText={setNote}
+            placeholder="e.g. Bank transfer, cash at dinner"
+            maxLength={280}
+            returnKeyType="done"
+          />
+        ) : (
+          <Pressable accessibilityRole="button" onPress={() => setNoting(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
+            <Text variant="label" color={c.focus}>
+              ＋ Add a note
+            </Text>
+          </Pressable>
+        )}
         {isEdit ? (
           <Notice tone="info">The original payment stays in the history, marked as corrected, so everyone can see what changed.</Notice>
         ) : null}
-        <Card
-          style={{
-            flexDirection: 'row',
-            gap: space.md,
-            alignItems: 'flex-start',
-          }}>
-          <Text style={{ fontSize: 18 }}>ℹ</Text>
-          <Text variant="caption" muted style={{ flex: 1 }}>
-            Tally doesn’t move money. Record a payment once it’s been made in cash, by bank transfer or in another app. You can undo it
-            later from Activity.
-          </Text>
-        </Card>
         {mutation.isError ? <Notice>{mutation.error.message}</Notice> : null}
-        <Button
-          label={isEdit ? 'Save correction' : 'Record payment'}
-          onPress={save}
-          disabled={!valid || !!unchanged}
-          loading={mutation.isPending}
-        />
+        {isEdit ? (
+          <Button label="Save correction" onPress={save} disabled={!valid || !!unchanged} loading={mutation.isPending} />
+        ) : (
+          <SlideToConfirm
+            key={mutation.isError ? 'retry' : 'first'}
+            label={mutation.isPending ? 'Saving…' : from === myId ? 'Slide when you’ve paid' : 'Slide to record it'}
+            onConfirm={save}
+            disabled={!valid || mutation.isPending}
+          />
+        )}
+        <Text variant="caption" muted style={{ textAlign: 'center' }}>
+          Tally never moves money. This just records it.
+        </Text>
       </Gutter>
     </HeroScreen>
   );

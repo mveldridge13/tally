@@ -11,7 +11,7 @@ import { useMyId } from '@/lib/auth';
 import { relativeTime } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 import { useGroupSummaries } from '@/store/hooks';
-import { space, useColors } from '@/theme';
+import { brand, space, useColors } from '@/theme';
 
 function Row({ n }: { n: AppNotification }) {
   const c = useColors();
@@ -84,7 +84,7 @@ function Row({ n }: { n: AppNotification }) {
         </Text>
       </View>
       {/* Dot for ones that were new when you opened the screen. */}
-      {!n.read ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: c.owe }} /> : null}
+      {!n.read ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brand.slash }} /> : null}
     </Pressable>
   );
 }

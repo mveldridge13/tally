@@ -1,16 +1,19 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { TallyMark } from '@/components/brand';
 import { GroupListCard, PositionFigure, Gutter, HeroScreen, CardText, QuickAction, StatRow, TotalPill } from '@/components/dashboard';
 import { Sheet } from '@/components/friendly';
+import { Bouncy, buzz } from '@/components/fun';
 import { Button, Card, Field, Notice, Text } from '@/components/ui';
 import { inviteCodeFrom } from '@/lib/invite';
 import { useTallyData } from '@/lib/data';
 import { useWidthClass } from '@/lib/layout';
 import { useGroupSummaries } from '@/store/hooks';
-import { brand, space } from '@/theme';
+import { brand, radius, space, useColors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Filter = 'all' | 'owed' | 'owe' | 'settled';
@@ -19,6 +22,49 @@ const FILTER_WORDS: Record<Exclude<Filter, 'all'>, string> = {
   owe: 'groups you owe',
   settled: 'settled groups',
 };
+
+/** A group where nobody owes anybody (not just you). */
+const allSquare = (s: { myBalance: number; transfers: unknown[] }) => s.myBalance === 0 && s.transfers.length === 0;
+
+/** A bar at the bottom of the list ("All square 4 ⌄") that opens to show its groups. Starts closed. */
+function ClosedSection({ emoji, title, count, children }: { emoji: string; title: string; count: number; children: ReactNode }) {
+  const c = useColors();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Bouncy
+        scaleTo={0.98}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${title}, ${count} ${count === 1 ? 'group' : 'groups'}. ${open ? 'Collapse' : 'Expand'}`}
+        onPress={() => {
+          buzz.tap();
+          setOpen((o) => !o);
+        }}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space.sm,
+          padding: space.lg,
+          marginTop: space.sm,
+          borderRadius: radius.xl - 6,
+          backgroundColor: c.surfaceAlt,
+        }}>
+        <Text style={{ fontSize: 22 }}>{emoji}</Text>
+        <Text variant="heading" style={{ flex: 1, fontSize: 19, fontWeight: '700' }}>
+          {title}
+        </Text>
+        <View style={{ backgroundColor: brand.deep, borderRadius: radius.pill, paddingHorizontal: space.sm + 2, paddingVertical: 2 }}>
+          <Text variant="label" color={brand.onDeep} style={{ fontWeight: '700' }}>
+            {count}
+          </Text>
+        </View>
+        <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={26} color={c.textMuted} />
+      </Bouncy>
+      {open ? <Animated.View entering={FadeInDown.duration(220)}>{children}</Animated.View> : null}
+    </>
+  );
+}
 
 export default function GroupsScreen() {
   const { data, refetch, error } = useTallyData();
@@ -76,6 +122,23 @@ export default function GroupsScreen() {
     [summaries, filter, lastActivity],
   );
 
+  // With no filter, two closed sections at the bottom: groups where everyone's square, and groups
+  // you've put away ("Done with this group"). Both come back to the top by themselves when someone
+  // adds an expense.
+  const sectioned = filter === 'all';
+  const putAway = sectioned ? visible.filter((s) => s.group.hiddenByMe) : [];
+  const square = sectioned ? visible.filter((s) => !s.group.hiddenByMe && allSquare(s)) : [];
+  const active = sectioned ? visible.filter((s) => !s.group.hiddenByMe && !allSquare(s)) : visible;
+  const grid = (list: typeof visible) => (
+    <View style={{ flexDirection: wide ? 'row' : 'column', flexWrap: 'wrap', gap: space.md }}>
+      {list.map((s) => (
+        <View key={s.group.id} style={{ width: wide ? '48.8%' : '100%' }}>
+          <GroupListCard summary={s} lastActivity={lastActivity.get(s.group.id)} />
+        </View>
+      ))}
+    </View>
+  );
+
   const card =
     summaries.length > 0 ? (
       <>
@@ -118,15 +181,20 @@ export default function GroupsScreen() {
               <Card>
                 <Text muted>No groups here.</Text>
               </Card>
-            ) : (
-              <View style={{ flexDirection: wide ? 'row' : 'column', flexWrap: 'wrap', gap: space.md }}>
-                {visible.map((s) => (
-                  <View key={s.group.id} style={{ width: wide ? '48.8%' : '100%' }}>
-                    <GroupListCard summary={s} lastActivity={lastActivity.get(s.group.id)} />
-                  </View>
-                ))}
-              </View>
-            )}
+            ) : active.length > 0 ? (
+              grid(active)
+            ) : null}
+
+            {square.length > 0 ? (
+              <ClosedSection emoji="🎉" title="All square" count={square.length}>
+                {grid(square)}
+              </ClosedSection>
+            ) : null}
+            {putAway.length > 0 ? (
+              <ClosedSection emoji="📦" title="Put away" count={putAway.length}>
+                {grid(putAway)}
+              </ClosedSection>
+            ) : null}
           </Gutter>
         </View>
       ) : null}

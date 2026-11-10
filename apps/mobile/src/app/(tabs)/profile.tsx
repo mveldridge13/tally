@@ -28,7 +28,7 @@ function SettingRow({ label, value, onPress, danger }: { label: string; value?: 
         paddingVertical: space.lg,
         gap: space.md,
       }}>
-      <Text variant="heading" color={danger ? c.owe : c.text} style={{ flex: 1 }}>
+      <Text variant="heading" color={danger ? c.danger : c.text} style={{ flex: 1 }}>
         {label}
       </Text>
       {value ? (

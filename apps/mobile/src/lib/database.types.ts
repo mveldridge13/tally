@@ -316,6 +316,96 @@ export type Database = {
           },
         ];
       };
+      hidden_groups: {
+        Row: {
+          group_id: string;
+          hidden_at: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          group_id: string;
+          hidden_at?: string;
+          user_id?: string;
+        };
+        Update: {
+          group_id?: string;
+          hidden_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'hidden_groups_group_id_fkey';
+            columns: ['group_id'];
+            isOneToOne: false;
+            referencedRelation: 'groups';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'hidden_groups_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      notifications: {
+        Row: {
+          actor_id: string | null;
+          amount_cents: number | null;
+          created_at: string;
+          group_id: string | null;
+          id: string;
+          kind: string;
+          read_at: string | null;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_id?: string | null;
+          amount_cents?: number | null;
+          created_at?: string;
+          group_id?: string | null;
+          id?: string;
+          kind: string;
+          read_at?: string | null;
+          user_id: string;
+        };
+        Update: {
+          actor_id?: string | null;
+          amount_cents?: number | null;
+          created_at?: string;
+          group_id?: string | null;
+          id?: string;
+          kind?: string;
+          read_at?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'notifications_actor_id_fkey';
+            columns: ['actor_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'notifications_group_id_fkey';
+            columns: ['group_id'];
+            isOneToOne: false;
+            referencedRelation: 'groups';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'notifications_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       payment_methods: {
         Row: {
           account_name: string | null;
@@ -562,32 +652,38 @@ export type Database = {
           user_id: string;
         }[];
       };
+      group_reminders: {
+        Args: { p_group_id: string };
+        Returns: {
+          last_reminded_at: string;
+          user_id: string;
+        }[];
+      };
       group_role_of: { Args: { p_group_id: string; p_user_id: string }; Returns: Database['public']['Enums']['group_role'] };
       is_group_member: { Args: { p_group_id: string }; Returns: boolean };
-      group_reminders: { Args: { p_group_id: string }; Returns: { last_reminded_at: string; user_id: string }[] };
       is_group_owner: { Args: { p_group_id: string }; Returns: boolean };
       is_member_of: { Args: { p_group_id: string; p_user_id: string }; Returns: boolean };
       is_valid_abn: { Args: { p_abn: string }; Returns: boolean };
       leave_group: { Args: { p_group_id: string }; Returns: undefined };
-      member_net_balance: { Args: { p_group_id: string; p_user_id: string }; Returns: number };
       mark_notifications_read: { Args: Record<PropertyKey, never>; Returns: undefined };
+      member_net_balance: { Args: { p_group_id: string; p_user_id: string }; Returns: number };
       my_group_summaries: { Args: Record<PropertyKey, never>; Returns: Json };
       my_notifications: {
         Args: Record<PropertyKey, never>;
         Returns: {
-          actor_name: string | null;
+          actor_name: string;
+          amount_cents: number;
           created_at: string;
-          amount_cents: number | null;
           group_currency: string;
-          group_icon: string | null;
+          group_icon: string;
           group_id: string;
           group_name: string;
           id: string;
           kind: string;
-          read_at: string | null;
+          read_at: string;
         }[];
       };
-      remind_to_settle: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
+      owns_group_with: { Args: { p_user_id: string }; Returns: boolean };
       record_settlement: {
         Args: {
           p_amount_cents: number;
@@ -599,6 +695,7 @@ export type Database = {
         };
         Returns: string;
       };
+      remind_to_settle: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       remove_member: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       remove_payid: { Args: Record<PropertyKey, never>; Returns: undefined };
       require_user: { Args: Record<PropertyKey, never>; Returns: string };

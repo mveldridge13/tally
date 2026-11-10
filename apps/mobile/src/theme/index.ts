@@ -1,74 +1,87 @@
 import { useColorScheme } from 'react-native';
 
 /**
- * Tally design tokens: Sage & White.
+ * Tally design tokens: Coral + Lavender.
  * Every colour, space and type size in the app comes from here.
- * Money colours are reserved for money direction only: green = owed to you, muted red = you owe.
- * Readability: white on the sage header is 5.7:1, white on the button colour 7.3:1, and the
- * money and secondary-text colours all pass WCAG AA (4.5:1) on their backgrounds.
+ * Palette: coral pink #E4928A, warm coral #DFA3A8, lavender #E6DDF2, cream #FAF0EB, deep purple #605574.
+ * Money isn't colour-coded red/green: the words ("Sam owes you", "You owe Leo") carry the meaning.
+ * Readability: white on deep purple is 7:1; dark text on coral is 6:1.
  */
 
 /** Brand constants, identical in light and dark mode. Change the palette here. */
 export const brand = {
-  /** Sage: primary brand colour, used for header backgrounds and the logo. */
-  deep: '#4E6E5D',
-  /** Deep sage: primary buttons (stronger contrast with white text than the header colour). */
-  deeper: '#3F5D4E',
-  deepest: '#2F473B',
-  /** Pale sage: accent, used for highlights and the main action on the header. */
-  accent: '#D3E5DA',
-  accentSoft: '#E8F1EB',
-  /** Lighter shade of the sage tiles (sage mixed 50% with white): Home's summary card. Dark text only. */
-  sageLight: '#A6B6AE',
+  /** Deep purple: the brand's strong colour (sign-in screens, the dark card, bold tiles, the logo). */
+  deep: '#605574',
+  /** Darker purple: pressed and emphasis states. */
+  deeper: '#524866',
+  deepest: '#3F3650',
+  /** Lavender: soft tiles and highlights. */
+  accent: '#E6DDF2',
+  accentSoft: '#F3EEF9',
+  /** Coral pink: the light summary card (Home's total). Dark text only. */
+  coral: '#E4928A',
+  /** Warm coral: decoration on coral surfaces. */
+  coralWarm: '#DFA3A8',
+  /** Soft coral: "owes you" cards and payments. Dark text only. */
+  coralSoft: '#F7DDD8',
+  onCoral: '#2F2838',
+  /** Cream: the page background in light mode. */
+  cream: '#FAF0EB',
   /** Red slash in the Tally mark: part of the logo in every palette. Logo only; never used for money states. */
-  slash: '#F2555A',
+  slash: '#EF4444',
   onDeep: '#FFFFFF',
-  onAccent: '#26302B',
-  /** "You owe" on the sage header (the light-mode owe colour is too dark there). */
-  oweOnDeep: '#FFC7BE',
-  /** Secondary text on the header. */
+  onAccent: '#2F2838',
+  /** "You owe" on deep purple. */
+  oweOnDeep: '#FFFFFF',
+  /** Secondary text on deep purple. */
   onDeepMuted: 'rgba(255,255,255,0.82)',
-  /** Translucent highlight on the header: avatars, the selected rail tab, notes. */
-  tintOnDeep: 'rgba(211,229,218,0.24)',
+  /** Translucent highlight on deep purple: avatars, the selected rail tab, notes. */
+  tintOnDeep: 'rgba(230,221,242,0.24)',
 } as const;
 
 const palette = {
   light: {
-    bg: '#FFFFFF',
-    surface: '#F7FAF8',
-    surfaceAlt: '#E8F1EB',
-    border: '#E2EAE5',
-    text: '#26302B',
-    textMuted: '#66736C',
-    primary: brand.deeper,
+    bg: brand.cream,
+    surface: '#FFFFFF',
+    surfaceAlt: brand.accent,
+    /** Soft coral surface: "owes you" cards, payments. */
+    warm: brand.coralSoft,
+    border: '#EADDD7',
+    text: '#2F2838',
+    textMuted: '#6E6478',
+    primary: brand.deep,
     onPrimary: brand.onDeep,
     accent: brand.accent,
     onAccent: brand.onAccent,
-    focus: '#3F5D4E',
-    owed: '#1A7A50',
-    owe: '#B8433A',
-    settled: '#7A857F',
+    focus: brand.deep,
+    owed: brand.deep,
+    owe: '#2F2838',
+    settled: '#8A8091',
+    /** Errors and destructive actions only (never money). */
+    danger: '#B8433A',
   },
   dark: {
-    bg: '#111714',
-    surface: '#18201C',
-    surfaceAlt: '#212C26',
-    border: '#2B3832',
-    text: '#EAF1EC',
-    textMuted: '#9CAEA4',
-    primary: '#A9CDB8',
-    onPrimary: '#14201A',
+    bg: '#1E1A24',
+    surface: '#28222F',
+    surfaceAlt: '#3A3148',
+    warm: '#4A3036',
+    border: '#3E3548',
+    text: '#F4ECF0',
+    textMuted: '#B5A9BD',
+    primary: '#CFC3E6',
+    onPrimary: '#2A2238',
     accent: brand.accent,
     onAccent: brand.onAccent,
-    focus: '#A9CDB8',
-    owed: '#6FD39C',
-    owe: '#FF9C8F',
-    settled: '#9CAEA4',
+    focus: '#CFC3E6',
+    owed: '#E9B4AD',
+    owe: '#F4ECF0',
+    settled: '#B5A9BD',
+    danger: '#FF9C8F',
   },
 } as const;
 
 /** Distinct, brand-friendly colours for group avatars. Picked by groupColor(id). */
-const GROUP_COLORS = ['#2F7DE1', '#0EA5A4', '#7C5CDB', '#E07A3F', '#D6457A', '#3D9A5B', '#C99A1C', '#4F6BED'] as const;
+const GROUP_COLORS = ['#5B8BD9', '#3A9E9A', '#8A6CC9', '#D9785F', '#C9607A', '#5E9B6B', '#C1922E', '#6B7BE0'] as const;
 
 export function groupColor(id: string): string {
   let h = 0;

@@ -4,10 +4,12 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Pressable, ScrollView, View } from 'react-native';
 
-import { ActivityList } from '@/components/activity-list';
 import { ContactNameField, type ContactReach } from '@/components/contact-name-field';
-import { CardFigure, Gutter, HeaderMenuButton, HeroScreen, QuickAction, SectionTitle, StatRow, TotalPill } from '@/components/dashboard';
-import { balanceSentence, GROUP_ICONS, GroupIcon, MenuRow, Sheet } from '@/components/friendly';
+import { Gutter, HeaderMenuButton, HeroScreen, SectionTitle } from '@/components/dashboard';
+import { balanceSentence, FloatingButton, GROUP_ICONS, GroupIcon, MenuRow, Sheet } from '@/components/friendly';
+import { CountUp } from '@/components/fun';
+import { GroupFeed, OweWeb, Segmented } from '@/components/group-visuals';
+import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
@@ -17,6 +19,7 @@ import {
   useAddMembers,
   useDeleteGroup,
   useLeaveGroup,
+  useSetGroupHidden,
   useNameOf,
   useRecentlyReminded,
   useRemindToSettle,
@@ -27,7 +30,7 @@ import {
 import { firstName } from '@/lib/format';
 import { sendInvite, type InviteChannel } from '@/lib/invite';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
-import { soleOther, useGroupSummary } from '@/store/hooks';
+import { useGroupSummary } from '@/store/hooks';
 import { PRESS_DELAY, balanceColor, groupColor, radius, space, useColors } from '@/theme';
 
 type SheetName = 'people' | 'menu' | 'icon' | null;
@@ -47,7 +50,7 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const name = useNameOf();
   const myId = useMyId();
   const [sheet, setSheet] = useState<SheetName>(null);
-  const [showAllBalances, setShowAllBalances] = useState(false);
+  const [webView, setWebView] = useState<'me' | 'all'>('me');
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [guestName, setGuestName] = useState('');
   // The picked contact's number and email: used once to address the invite, never saved.
@@ -57,6 +60,7 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const setIcon = useSetGroupIcon();
   const deleteGroup = useDeleteGroup();
   const leaveGroup = useLeaveGroup();
+  const setHidden = useSetGroupHidden();
   const { data: partners } = useSplitPartners();
   const picked = useSelection();
   // Owner and co-owners: settle-up reminders, one per person per day.
@@ -77,8 +81,10 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const { group, balances, myBalance, transfers } = summary;
   const money = (cents: number) => formatMoney(Math.abs(cents), group.currency);
   const isOwner = group.myRole === 'owner';
-  const other = soleOther(summary, myId);
-  const myTransfer = transfers.find((t) => t.fromUserId === myId) ?? transfers.find((t) => t.toUserId === myId);
+  const mine = myTransfers([summary], myId);
+  const owesMe = new Set(mine.filter((t) => !t.iOwe).map((t) => t.other));
+  const shownTransfers = webView === 'me' ? transfers.filter((t) => t.fromUserId === myId || t.toUserId === myId) : transfers;
+  const othersOnly = transfers.some((t) => t.fromUserId !== myId && t.toUserId !== myId);
   const remindedToday = (uid: string) => justReminded.has(uid) || recentlyReminded.has(uid);
   function sendReminder(uid: string) {
     remind.mutate(
@@ -185,48 +191,24 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
     ]);
   }
 
-  const card = (
-    <>
-      <CardFigure
-        label="Your balance"
-        value={`${myBalance > 0 ? '+' : myBalance < 0 ? '−' : ''}${money(myBalance)}`}
-        note={balanceSentence(myBalance, group.currency, other ? name(other) : undefined)}
-      />
-      <StatRow>
-        <TotalPill label="Group spending" cents={summary.totalSpent ?? 0} currency={group.currency} tone="neutral" />
-        <TotalPill label="Your share" cents={summary.myShare} currency={group.currency} tone="neutral" />
-      </StatRow>
-    </>
-  );
-
   return (
     <View style={{ flex: 1 }}>
       <HeroScreen
         variant={embedded ? 'card' : 'full'}
         nav={embedded ? 'none' : 'back'}
         title={group.name}
-        subtitle={`${group.memberIds.length} ${group.memberIds.length === 1 ? 'person' : 'people'} · ${group.currency}`}
+        subtitleNode={
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <CountUp
+              cents={summary.totalSpent ?? 0}
+              currency={group.currency}
+              style={{ color: c.textMuted, fontWeight: '600', fontVariant: ['tabular-nums'] }}
+            />
+            <Text muted> spent · your share {formatMoney(summary.myShare, group.currency)}</Text>
+          </View>
+        }
         leading={<GroupIcon group={group} size={52} />}
         right={<HeaderMenuButton onPress={() => setSheet('menu')} />}
-        actions={
-          <>
-            <QuickAction
-              bold
-              icon="add-circle-outline"
-              label="Add expense"
-              onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } })}
-            />
-            <QuickAction
-              bold
-              icon="handshake"
-              label="Settle up"
-              disabled={!myTransfer}
-              onPress={() => myTransfer && settle(myTransfer.fromUserId, myTransfer.toUserId, myTransfer.amount)}
-            />
-          </>
-        }
-        card={card}
-        cardTone="light"
         refreshing={pull.refreshing}
         onRefresh={pull.onRefresh}>
         {inviteError ? (
@@ -234,6 +216,17 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
             <Notice>{inviteError}</Notice>
           </Gutter>
         ) : null}
+
+        {/* You: who you owe and who owes you, each with its action. */}
+        <Gutter>
+          {mine.length === 0 ? (
+            <AllSquareCard
+              line={myBalance === 0 ? 'Nobody owes you and you don’t owe anyone here.' : balanceSentence(myBalance, group.currency)}
+            />
+          ) : (
+            mine.map((t) => <YouCard key={`${t.other}-${t.iOwe}`} {...t} />)
+          )}
+        </Gutter>
 
         {/* People: a row of faces with each person's balance; + opens Add people. */}
         <View style={{ gap: space.md }}>
@@ -272,7 +265,7 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
                     </Text>
                   ) : null}
                   {/* Owner and co-owners: nudge someone who owes. Guests have no app to receive it. */}
-                  {canRemind && !isMe && !guest && bal < 0 ? (
+                  {canRemind && !isMe && !guest && bal < 0 && !owesMe.has(uid) ? (
                     remindedToday(uid) ? (
                       <Text variant="caption" muted style={{ marginTop: 2 }}>
                         Reminded
@@ -328,15 +321,33 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
               </Text>
             </Pressable>
           </ScrollView>
+        </View>
 
-          {transfers.length > 0 ? (
+        {/* Who owes whom, drawn as arrows between faces. Owners and co-owners can switch to everyone. */}
+        {transfers.length > 0 ? (
+          <View style={{ gap: space.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.lg }}>
+              <Text variant="heading" style={{ fontSize: 19, fontWeight: '700' }}>
+                Who owes whom
+              </Text>
+              {othersOnly ? (
+                <Segmented
+                  options={[
+                    { id: 'me', label: 'Just me' },
+                    { id: 'all', label: 'Everyone' },
+                  ]}
+                  value={webView}
+                  onChange={setWebView}
+                />
+              ) : null}
+            </View>
             <Gutter>
-              <Pressable accessibilityRole="button" onPress={() => setShowAllBalances((v) => !v)} hitSlop={8}>
-                <Text variant="label" color={c.focus}>
-                  {showAllBalances ? 'Hide who owes whom' : 'See who owes whom ›'}
-                </Text>
-              </Pressable>
-              {showAllBalances ? (
+              {shownTransfers.length > 0 ? (
+                <OweWeb memberIds={group.memberIds} transfers={shownTransfers} currency={group.currency} />
+              ) : (
+                <Text muted>You’re not in any of these. Switch to Everyone to see them.</Text>
+              )}
+              {webView === 'all' ? (
                 <Card style={{ paddingVertical: 0 }}>
                   {transfers.map((t, i) => (
                     <View key={`${t.fromUserId}-${t.toUserId}`}>
@@ -361,13 +372,13 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
                 </Card>
               ) : null}
             </Gutter>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
 
-        {/* Expenses */}
+        {/* What's been happening: expenses and payments as a chat. */}
         <View style={{ gap: space.md }}>
           <View style={{ gap: 2 }}>
-            <SectionTitle title="Expenses" />
+            <SectionTitle title="What’s been happening" />
             {summary.seesAll ? null : (
               <Gutter>
                 <Text variant="caption" muted>
@@ -377,10 +388,14 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
             )}
           </View>
           <Gutter>
-            <ActivityList groupId={group.id} emptyText="Nothing here yet. Tap Add expense to log the first one." />
+            <GroupFeed groupId={group.id} currency={group.currency} emptyText="Nothing here yet. Tap Add expense to log the first one." />
           </Gutter>
         </View>
+        {/* Room for the floating button. */}
+        <View style={{ height: 96 }} />
       </HeroScreen>
+
+      <FloatingButton label="Add expense" onPress={() => router.push({ pathname: '/add-expense', params: { groupId: group.id } })} />
 
       {/* Add people: people you split with, an invite link, or someone by name. */}
       <Sheet
@@ -448,6 +463,32 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
               openBreakdown();
             }}
           />
+          <Divider />
+          {group.hiddenByMe ? (
+            <MenuRow
+              label="Bring back to your list"
+              detail="Put back with your other groups"
+              onPress={() => {
+                setSheet(null);
+                setHidden.mutate({ groupId: group.id, hidden: false });
+              }}
+            />
+          ) : (
+            <MenuRow
+              label="Done with this group"
+              detail="Moves it to Put away on your Groups page. Only for you."
+              onPress={() => {
+                setSheet(null);
+                setHidden.mutate(
+                  { groupId: group.id, hidden: true },
+                  {
+                    onSuccess: gone,
+                    onError: (e) => Alert.alert('Couldn’t put it away', e instanceof Error ? e.message : 'Please try again.'),
+                  },
+                );
+              }}
+            />
+          )}
         </Card>
         <Card style={{ paddingVertical: 0 }}>
           {isOwner ? (

@@ -10,7 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { brand, useColors } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
-// Fade the sage splash into the first screen (which also starts sage) instead of cutting to it.
+// Fade the purple splash into the first screen (which also starts purple) instead of cutting to it.
 SplashScreen.setOptions({ fade: true, duration: 350 });
 
 const queryClient = new QueryClient({

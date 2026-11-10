@@ -38,6 +38,7 @@ export function HeroScreen({
   eyebrow,
   title,
   subtitle,
+  subtitleNode,
   leading,
   right,
   card,
@@ -53,6 +54,8 @@ export function HeroScreen({
   eyebrow?: string;
   title: string;
   subtitle?: string;
+  /** Replaces `subtitle` when the line needs more than text (a total that counts up). */
+  subtitleNode?: ReactNode;
   /** Beside the title, on the left (a group's icon). */
   leading?: ReactNode;
   /** Top-right corner (avatar, ⋯ menu). */
@@ -126,11 +129,12 @@ export function HeroScreen({
               <Text variant="title" color={c.primary} numberOfLines={2} style={{ fontSize: 28, lineHeight: 34 }}>
                 {title}
               </Text>
-              {subtitle ? (
-                <Text variant="body" muted numberOfLines={2}>
-                  {subtitle}
-                </Text>
-              ) : null}
+              {subtitleNode ??
+                (subtitle ? (
+                  <Text variant="body" muted numberOfLines={2}>
+                    {subtitle}
+                  </Text>
+                ) : null)}
             </View>
           </View>
         </View>
@@ -164,20 +168,18 @@ export function HeroScreen({
  * (Home, where the bold action tiles lead). CardFigure, StatRow and TotalPill follow the tone.
  */
 export function SummaryCard({ children, tone = 'dark' }: { children: ReactNode; tone?: CardTone }) {
-  const c = useColors();
-  const scheme = useColorScheme();
   return (
     <CardToneContext.Provider value={tone}>
       <View
         style={{
           marginHorizontal: space.lg,
-          backgroundColor: tone === 'dark' ? brand.deep : scheme === 'dark' ? c.surfaceAlt : brand.sageLight,
+          backgroundColor: tone === 'dark' ? brand.deep : brand.coral,
           borderRadius: radius.xl,
           paddingVertical: space.lg,
           paddingHorizontal: space.xl,
           overflow: 'hidden',
         }}>
-        {tone === 'dark' ? <HeroGlow /> : <HeroGlow color="#FFFFFF" strength={2.5} />}
+        {tone === 'dark' ? <HeroGlow /> : <HeroGlow color={brand.accent} strength={4} />}
         {children}
       </View>
     </CardToneContext.Provider>
@@ -189,8 +191,6 @@ const CardToneContext = createContext<CardTone>('dark');
 
 /** Text colours for whatever summary card this sits in. */
 export function useCardInk() {
-  const c = useColors();
-  const scheme = useColorScheme();
   return useContext(CardToneContext) === 'dark'
     ? {
         text: brand.onDeep,
@@ -201,18 +201,16 @@ export function useCardInk() {
         select: 'rgba(255,255,255,0.18)',
         press: 'rgba(255,255,255,0.1)',
       }
-    : scheme === 'dark'
-      ? { text: c.text, muted: c.textMuted, owed: c.owed, owe: c.owe, line: c.border, select: c.border, press: c.surface }
-      : // On the lighter sage: very dark text and money colours, all at least 5:1 contrast.
-        {
-          text: '#1B2A22',
-          muted: '#2B3D33',
-          owed: '#0A4429',
-          owe: '#6E1F1A',
-          line: 'rgba(27,42,34,0.3)',
-          select: 'rgba(255,255,255,0.55)',
-          press: 'rgba(255,255,255,0.3)',
-        };
+    : // On coral (both themes): dark text, at least 5:1 contrast.
+      {
+        text: brand.onCoral,
+        muted: '#4A3F52',
+        owed: brand.onCoral,
+        owe: brand.onCoral,
+        line: 'rgba(47,40,56,0.25)',
+        select: 'rgba(255,255,255,0.55)',
+        press: 'rgba(255,255,255,0.3)',
+      };
 }
 
 /** Text inside a summary card, coloured for the card's tone (white on dark, dark on light). */
@@ -456,7 +454,7 @@ export function QuickAction({
   disabled?: boolean;
 }) {
   const c = useColors();
-  const color = bold ? brand.onDeep : danger ? c.owe : c.primary;
+  const color = bold ? brand.onDeep : danger ? c.danger : c.primary;
   return (
     <Pressable
       accessibilityRole="button"
@@ -470,7 +468,7 @@ export function QuickAction({
         gap: space.xs,
         paddingVertical: bold ? space.lg : space.md,
         borderRadius: radius.lg,
-        backgroundColor: bold ? (danger ? c.owe : brand.deep) : c.surfaceAlt,
+        backgroundColor: bold ? (danger ? c.danger : brand.deep) : c.surfaceAlt,
         opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
       })}>
       <MaterialIcons name={icon} size={bold ? 28 : 24} color={color} />

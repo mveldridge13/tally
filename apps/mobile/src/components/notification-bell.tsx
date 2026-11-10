@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { Pressable, View } from 'react-native';
 
 import { useNotifications } from '@/lib/data';
-import { useColors } from '@/theme';
+import { brand, useColors } from '@/theme';
 import { Text } from './ui';
 
 /** Round bell for the header. Shows a red count when there are notifications you haven't seen. */
@@ -36,7 +36,7 @@ export function NotificationBell() {
             height: 18,
             paddingHorizontal: 4,
             borderRadius: 9,
-            backgroundColor: c.owe,
+            backgroundColor: brand.slash,
             borderWidth: 2,
             borderColor: c.bg,
             alignItems: 'center',

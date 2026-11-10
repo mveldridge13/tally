@@ -50,8 +50,10 @@ export function balanceSentence(cents: Cents, currency: string, other?: string):
 /** The one main action on a screen, floating above the bottom-right corner. */
 export function FloatingButton({ label, onPress, bottom = 0 }: { label: string; onPress: () => void; bottom?: number }) {
   const c = useColors();
+  // Clear the phone's gesture bar / nav buttons so it's never under them.
+  const insets = useSafeAreaInsets();
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', right: space.lg, bottom: bottom + space.lg }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', right: space.lg, bottom: bottom + insets.bottom + space.lg }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -174,7 +176,7 @@ export function MenuRow({ label, detail, onPress, danger }: { label: string; det
       android_ripple={{ color: c.surfaceAlt }}
       style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md + 2 }}>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text variant="heading" color={danger ? c.owe : c.text} style={{ fontWeight: '500' }}>
+        <Text variant="heading" color={danger ? c.danger : c.text} style={{ fontWeight: '500' }}>
           {label}
         </Text>
         {detail ? (

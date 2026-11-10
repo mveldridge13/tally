@@ -191,7 +191,7 @@ export function Field({
   const c = useColors();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const borderColor = error ? c.owe : focused ? c.focus : c.border;
+  const borderColor = error ? c.danger : focused ? c.focus : c.border;
   return (
     <View style={{ gap: space.sm }}>
       <Text variant="label">{label}</Text>
@@ -236,7 +236,7 @@ export function Field({
         ) : null}
       </View>
       {error ? (
-        <Text variant="caption" color={c.owe}>
+        <Text variant="caption" color={c.danger}>
           {error}
         </Text>
       ) : hint ? (
@@ -256,13 +256,13 @@ export function Notice({ tone = 'error', children }: { tone?: 'error' | 'info'; 
     <View
       accessibilityLiveRegion="polite"
       style={{
-        backgroundColor: error ? 'rgba(194,65,12,0.08)' : c.surfaceAlt,
+        backgroundColor: error ? 'rgba(184,67,58,0.08)' : c.surfaceAlt,
         borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: error ? 'rgba(194,65,12,0.25)' : c.border,
+        borderColor: error ? 'rgba(184,67,58,0.3)' : c.border,
         padding: space.md,
       }}>
-      <Text variant="label" color={error ? c.owe : c.text}>
+      <Text variant="label" color={error ? c.danger : c.text}>
         {children}
       </Text>
     </View>

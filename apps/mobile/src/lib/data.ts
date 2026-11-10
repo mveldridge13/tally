@@ -31,6 +31,8 @@ export interface Group {
   roles: Record<string, GroupRole>;
   /** The signed-in user's role in this group. */
   myRole: GroupRole;
+  /** You put this group away ("Done with this group"): it sits at the bottom of your Groups list. */
+  hiddenByMe: boolean;
 }
 
 /** 'admin' is shown as "Co-owner": sees everything like the owner, but can't manage the group. */
@@ -121,7 +123,7 @@ const EMPTY: TallyData = { me: null, payIds: {}, people: {}, groups: [], expense
 export const TALLY_KEY = ['tally'] as const;
 
 async function fetchTally(myId: string): Promise<TallyData> {
-  const [groupsRes, meRes, payIdsRes, ledgersRes] = await Promise.all([
+  const [groupsRes, meRes, payIdsRes, ledgersRes, hiddenRes] = await Promise.all([
     supabase
       .from('groups')
       .select(
@@ -140,6 +142,8 @@ async function fetchTally(myId: string): Promise<TallyData> {
     // RLS returns only your own PayID and those of the owners of groups you're in.
     supabase.from('payment_methods').select('user_id, payid_type, value, account_name').eq('kind', 'payid'),
     supabase.rpc('my_group_summaries'),
+    // Only your own rows (RLS). Nobody else can see which groups you've put away.
+    supabase.from('hidden_groups').select('group_id'),
   ]);
   if (groupsRes.error) throw groupsRes.error;
   if (ledgersRes.error) throw ledgersRes.error;
@@ -163,6 +167,9 @@ async function fetchTally(myId: string): Promise<TallyData> {
     data.people[p.id] = { id: p.id, name: p.name };
   }
 
+  // Not fatal: if this fails, every group just shows as usual.
+  const hidden = new Set((hiddenRes.data ?? []).map((h) => h.group_id));
+
   for (const g of groupsRes.data) {
     const memberIds: string[] = [];
     const roles: Record<string, GroupRole> = {};
@@ -175,7 +182,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
       roles[m.user_id] = m.role;
       if (m.user_id === myId) myRole = m.role;
     }
-    data.groups.push({ id: g.id, name: g.name, currency: g.currency, icon: g.icon, memberIds, roles, myRole });
+    data.groups.push({ id: g.id, name: g.name, currency: g.currency, icon: g.icon, memberIds, roles, myRole, hiddenByMe: hidden.has(g.id) });
 
     for (const e of g.expenses) {
       data.expenses.push({
@@ -288,6 +295,16 @@ function useInvalidating<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) 
   return useMutation({
     mutationFn: fn,
     onSuccess: () => qc.invalidateQueries({ queryKey: TALLY_KEY }),
+  });
+}
+
+/** "Done with this group" (hidden: true) or bring it back. Only changes your own Groups list. */
+export function useSetGroupHidden() {
+  return useInvalidating(async ({ groupId, hidden }: { groupId: string; hidden: boolean }) => {
+    const { error } = hidden
+      ? await supabase.from('hidden_groups').upsert({ group_id: groupId }, { ignoreDuplicates: true })
+      : await supabase.from('hidden_groups').delete().eq('group_id', groupId);
+    if (error) throw error;
   });
 }
 
