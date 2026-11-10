@@ -1,22 +1,78 @@
-import { formatMoney } from '@tally/shared';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { ActivityList } from '@/components/activity-list';
 import { TallyMark } from '@/components/brand';
-import { CardFigure, CardText, Gutter, HeroScreen, StatRow, TotalPill } from '@/components/dashboard';
-import { MenuRow, Sheet } from '@/components/friendly';
-import { Notice, Text } from '@/components/ui';
+import { CardText, Gutter, HeroScreen, StatRow, TotalPill } from '@/components/dashboard';
+import { GroupIcon, Sheet } from '@/components/friendly';
+import { Bouncy, buzz, CountUp } from '@/components/fun';
+import { Bubble } from '@/components/group-visuals';
+import { Card, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useTallyData } from '@/lib/data';
 import { dayLabel } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { useActivity, type ActivityItem } from '@/store/hooks';
-import { brand, radius, space, useColors } from '@/theme';
+import { brand, radius, space, useColors, type Colors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Kind = 'all' | 'expenses' | 'payments' | 'mine';
+
+/** The friendly empty card: a big emoji and a line. */
+function Empty({ emoji, text }: { emoji: string; text: string }) {
+  return (
+    <Card style={{ alignItems: 'center', gap: space.sm, paddingVertical: space.xl }}>
+      <Text style={{ fontSize: 40 }}>{emoji}</Text>
+      <Text muted style={{ textAlign: 'center' }}>
+        {text}
+      </Text>
+    </Card>
+  );
+}
+
+/** One big tile in the "Show activity from" panel. */
+function GroupTile({
+  c,
+  icon,
+  label,
+  count,
+  selected,
+  onPress,
+}: {
+  c: Colors;
+  icon: ReactNode;
+  label: string;
+  count: number;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <View style={{ width: '48%' }}>
+      <Bouncy
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        accessibilityLabel={`${label}, ${count} ${count === 1 ? 'item' : 'items'}`}
+        onPress={onPress}
+        style={{
+          alignItems: 'center',
+          gap: space.sm,
+          paddingVertical: space.lg,
+          paddingHorizontal: space.md,
+          borderRadius: radius.xl - 6,
+          backgroundColor: selected ? c.primary : c.surfaceAlt,
+        }}>
+        {icon}
+        <Text variant="heading" color={selected ? c.onPrimary : c.text} numberOfLines={1} style={{ fontWeight: '700' }}>
+          {label}
+        </Text>
+        <Text variant="caption" color={selected ? c.onPrimary : c.textMuted}>
+          {selected ? 'Showing now' : `${count} ${count === 1 ? 'item' : 'items'}`}
+        </Text>
+      </Bouncy>
+    </View>
+  );
+}
 const KIND_WORDS: Record<Exclude<Kind, 'all'>, string> = { expenses: 'expenses', payments: 'payments', mine: 'items with you in them' };
 
 export default function ActivityScreen() {
@@ -30,7 +86,8 @@ export default function ActivityScreen() {
   const [pickingGroup, setPickingGroup] = useState(false);
   // Tap a figure on the card to show only those items; tap it again to show everything.
   const toggle = (k: Exclude<Kind, 'all'>) => setKind((cur) => (cur === k ? 'all' : k));
-  const groupName = groupId === 'all' ? 'All groups' : (data.groups.find((g) => g.id === groupId)?.name ?? 'All groups');
+  const pickedGroup = groupId === 'all' ? undefined : data.groups.find((g) => g.id === groupId);
+  const groupName = pickedGroup?.name ?? 'All groups';
   // Unfolded (expanded width): one full-width page.
   const wide = useWidthClass() === 'expanded';
 
@@ -92,7 +149,21 @@ export default function ActivityScreen() {
 
   const card = hasAny ? (
     <>
-      <CardFigure label={`Your share of spending in ${month.label}`} value={formatMoney(month.myShare, month.currency)} />
+      <CardText variant="label" muted>
+        Your share of spending in {month.label}
+      </CardText>
+      <CountUp
+        cents={month.myShare}
+        currency={month.currency}
+        style={{
+          fontSize: 40,
+          lineHeight: 48,
+          fontWeight: '800',
+          letterSpacing: -1.2,
+          color: brand.onCoral,
+          fontVariant: ['tabular-nums'],
+        }}
+      />
       <StatRow>
         <TotalPill
           label="Expenses"
@@ -133,33 +204,50 @@ export default function ActivityScreen() {
       {/* One compact group picker instead of a row of chips per group. */}
       {hasAny && data.groups.length > 1 ? (
         <Gutter>
-          <Pressable
+          <Bouncy
             accessibilityRole="button"
             accessibilityLabel={`Group: ${groupName}. Change`}
-            onPress={() => setPickingGroup(true)}
-            style={({ pressed }) => ({
+            onPress={() => {
+              buzz.tap();
+              setPickingGroup(true);
+            }}
+            style={{
               alignSelf: 'flex-start',
               flexDirection: 'row',
               alignItems: 'center',
-              gap: space.xs,
-              paddingVertical: space.sm,
-              paddingLeft: space.md,
-              paddingRight: space.sm,
+              gap: space.sm,
+              paddingVertical: 6,
+              paddingLeft: 6,
+              paddingRight: space.md,
               borderRadius: radius.pill,
               backgroundColor: c.surfaceAlt,
-              opacity: pressed ? 0.8 : 1,
-            })}>
-            <Text variant="label" numberOfLines={1} style={{ maxWidth: 240 }}>
+            }}>
+            {pickedGroup ? (
+              <GroupIcon group={pickedGroup} size={30} />
+            ) : (
+              <View
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 15,
+                  backgroundColor: c.surface,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                <Text style={{ fontSize: 15 }}>🌈</Text>
+              </View>
+            )}
+            <Text variant="label" numberOfLines={1} style={{ maxWidth: 220, fontWeight: '700' }}>
               {groupName}
             </Text>
             <MaterialIcons name="expand-more" size={20} color={c.textMuted} />
-          </Pressable>
+          </Bouncy>
         </Gutter>
       ) : null}
 
       {hasAny && sections.length === 0 ? (
         <Gutter>
-          <ActivityList items={[]} emptyText="Nothing matches these filters." />
+          <Empty emoji="🔍" text="Nothing matches these filters." />
         </Gutter>
       ) : null}
 
@@ -177,16 +265,20 @@ export default function ActivityScreen() {
             {s.label}
           </Text>
           <Gutter>
-            <ActivityList items={s.items} />
+            {s.items.map((item, i) => (
+              <Animated.View key={item.id} entering={FadeInDown.delay(Math.min(i, 6) * 35).duration(220)}>
+                <Bubble item={item} showGroup={groupId === 'all'} />
+              </Animated.View>
+            ))}
           </Gutter>
         </View>
       ))}
 
       {!hasAny ? (
         <Gutter>
-          <ActivityList
-            items={[]}
-            emptyText="No activity yet. Once someone adds an expense or records a payment in one of your groups, it’ll show up here."
+          <Empty
+            emoji="🧾"
+            text="No activity yet. Once someone adds an expense or records a payment in one of your groups, it’ll show up here."
           />
         </Gutter>
       ) : null}
@@ -208,13 +300,33 @@ export default function ActivityScreen() {
       </HeroScreen>
 
       <Sheet visible={pickingGroup} onClose={() => setPickingGroup(false)} title="Show activity from">
-        <View>
-          {[{ id: 'all', name: 'All groups' }, ...data.groups].map((g) => (
-            <MenuRow
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space.md }}>
+          {[{ id: 'all', name: 'All groups', icon: null }, ...data.groups].map((g) => (
+            <GroupTile
               key={g.id}
+              c={c}
+              icon={
+                g.id === 'all' ? (
+                  <View
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 24,
+                      backgroundColor: c.surface,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                    <Text style={{ fontSize: 24 }}>🌈</Text>
+                  </View>
+                ) : (
+                  <GroupIcon group={g} size={48} />
+                )
+              }
               label={g.name}
-              detail={g.id === groupId ? 'Showing now' : undefined}
+              count={g.id === 'all' ? all.length : all.filter((i) => i.groupId === g.id).length}
+              selected={g.id === groupId}
               onPress={() => {
+                buzz.tap();
                 setGroupId(g.id);
                 setPickingGroup(false);
               }}

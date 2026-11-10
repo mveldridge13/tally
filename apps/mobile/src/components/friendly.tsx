@@ -6,7 +6,7 @@ import { formatMoney, type Cents } from '@tally/shared';
 import { useEffect, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { brand, groupColor, radius, space, useColors } from '@/theme';
@@ -123,40 +123,60 @@ function SheetBody({ onClose, title, children, footer }: { onClose: () => void; 
   const shade = useSharedValue(0);
 
   useEffect(() => {
-    offset.value = withTiming(0, { duration: 240, easing: Easing.out(Easing.cubic) });
-    shade.value = withTiming(1, { duration: 200 });
+    // A soft spring, so the panel lands with a little bounce.
+    offset.set(withSpring(0, { damping: 20, stiffness: 220, mass: 0.9 }));
+    shade.set(withTiming(1, { duration: 200 }));
   }, [offset, shade]);
 
-  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.value }] }));
-  const shadeStyle = useAnimatedStyle(() => ({ opacity: shade.value }));
+  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.get() }] }));
+  const shadeStyle = useAnimatedStyle(() => ({ opacity: shade.get() }));
 
   return (
     <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
       <Animated.View style={[{ position: 'absolute', inset: 0 }, shadeStyle]}>
-        <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' }} />
+        <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(47,40,56,0.45)' }} />
       </Animated.View>
       <Animated.View
         style={[
           {
             maxHeight: '88%',
             backgroundColor: c.bg,
-            borderTopLeftRadius: radius.xl,
-            borderTopRightRadius: radius.xl,
+            borderTopLeftRadius: 32,
+            borderTopRightRadius: 32,
             paddingBottom: insets.bottom + space.lg,
           },
           panelStyle,
         ]}>
-        <View style={{ alignItems: 'center', paddingTop: space.sm, paddingBottom: space.xs }}>
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: c.border }} />
+        <View style={{ alignItems: 'center', paddingTop: space.sm + 2, paddingBottom: space.xs }}>
+          <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: c.surfaceAlt }} />
         </View>
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.lg, gap: space.lg }}>
           {title ? (
-            <Text variant="title" style={{ fontSize: 22 }}>
-              {title}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <Text variant="title" style={{ flex: 1, fontSize: 24, fontWeight: '800', letterSpacing: -0.4 }}>
+                {title}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                onPress={onClose}
+                hitSlop={8}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: c.surfaceAlt,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                <Text style={{ fontSize: 16, fontWeight: '700' }} color={c.text}>
+                  ✕
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
           {children}
         </ScrollView>

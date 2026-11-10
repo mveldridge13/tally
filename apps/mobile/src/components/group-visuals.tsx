@@ -122,11 +122,14 @@ function dayLabel(iso: string): string {
   });
 }
 
-function Bubble({ item, currency }: { item: ActivityItem; currency: string }) {
+/** One expense or payment as a chat bubble. `showGroup` (Activity) adds which group it's from. */
+export function Bubble({ item, currency: given, showGroup }: { item: ActivityItem; currency?: string; showGroup?: boolean }) {
   const c = useColors();
   const myId = useMyId();
   const name = useNameOf();
   const { data } = useTallyData();
+  const group = data.groups.find((g) => g.id === item.groupId);
+  const currency = given ?? group?.currency ?? 'USD';
   const who = item.kind === 'expense' ? item.actorId : item.fromUserId;
   const mine = who === myId;
   const money = (v: number) => formatMoney(v, currency);
@@ -148,6 +151,7 @@ function Bubble({ item, currency }: { item: ActivityItem; currency: string }) {
     line = 'Settled up';
     right = { big: money(item.amount) };
   }
+  if (showGroup && group) line = `${line} · ${group.icon ? `${group.icon} ` : ''}${group.name}`;
 
   return (
     <View style={{ flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: space.sm }}>
