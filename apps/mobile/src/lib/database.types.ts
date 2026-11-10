@@ -668,6 +668,7 @@ export type Database = {
       mark_notifications_read: { Args: Record<PropertyKey, never>; Returns: undefined };
       member_net_balance: { Args: { p_group_id: string; p_user_id: string }; Returns: number };
       my_group_summaries: { Args: Record<PropertyKey, never>; Returns: Json };
+      my_spending_between: { Args: { p_from: string; p_to: string }; Returns: { group_id: string; my_share: number }[] };
       my_notifications: {
         Args: Record<PropertyKey, never>;
         Returns: {

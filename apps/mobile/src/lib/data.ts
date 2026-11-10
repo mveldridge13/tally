@@ -33,6 +33,7 @@ export interface Group {
   myRole: GroupRole;
   /** You put this group away ("Done with this group"): it sits at the bottom of your Groups list. */
   hiddenByMe: boolean;
+  createdAt: string;
 }
 
 /** 'admin' is shown as "Co-owner": sees everything like the owner, but can't manage the group. */
@@ -182,7 +183,17 @@ async function fetchTally(myId: string): Promise<TallyData> {
       roles[m.user_id] = m.role;
       if (m.user_id === myId) myRole = m.role;
     }
-    data.groups.push({ id: g.id, name: g.name, currency: g.currency, icon: g.icon, memberIds, roles, myRole, hiddenByMe: hidden.has(g.id) });
+    data.groups.push({
+      id: g.id,
+      name: g.name,
+      currency: g.currency,
+      icon: g.icon,
+      memberIds,
+      roles,
+      myRole,
+      hiddenByMe: hidden.has(g.id),
+      createdAt: g.created_at,
+    });
 
     for (const e of g.expenses) {
       data.expenses.push({
@@ -225,6 +236,28 @@ export function useTallyData() {
     enabled: !!myId,
   });
   return { ...query, data: query.data ?? EMPTY };
+}
+
+/**
+ * Your share of each group's expenses this calendar month (device time zone), by group id.
+ * Worked out on the server, since members can't download expenses other people added.
+ * Null (not an error) while loading or if the server doesn't have the function yet.
+ */
+export function useMonthSpending(): Record<string, Cents> | null {
+  const myId = useMyId();
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, myId, 'month-spending', from.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('my_spending_between', { p_from: from.toISOString(), p_to: to.toISOString() });
+      if (error) return null;
+      return Object.fromEntries((data ?? []).map((r) => [r.group_id, r.my_share])) as Record<string, Cents>;
+    },
+    enabled: !!myId,
+  });
+  return query.data ?? null;
 }
 
 /** "You" for the signed-in user, otherwise the person's name. */

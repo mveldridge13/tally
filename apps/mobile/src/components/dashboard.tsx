@@ -167,18 +167,29 @@ export function HeroScreen({
  * `light`: a lighter shade of the sage tiles with dark text, for a screen where the tiles should catch the eye first
  * (Home, where the bold action tiles lead). CardFigure, StatRow and TotalPill follow the tone.
  */
-export function SummaryCard({ children, tone = 'dark' }: { children: ReactNode; tone?: CardTone }) {
+export function SummaryCard({
+  children,
+  tone = 'dark',
+  style,
+}: {
+  children: ReactNode;
+  tone?: CardTone;
+  style?: ComponentProps<typeof View>['style'];
+}) {
   return (
     <CardToneContext.Provider value={tone}>
       <View
-        style={{
-          marginHorizontal: space.lg,
-          backgroundColor: tone === 'dark' ? brand.deep : brand.coral,
-          borderRadius: radius.xl,
-          paddingVertical: space.lg,
-          paddingHorizontal: space.xl,
-          overflow: 'hidden',
-        }}>
+        style={[
+          {
+            marginHorizontal: space.lg,
+            backgroundColor: tone === 'dark' ? brand.deep : brand.coral,
+            borderRadius: radius.xl,
+            paddingVertical: space.lg,
+            paddingHorizontal: space.xl,
+            overflow: 'hidden',
+          },
+          style,
+        ]}>
         {tone === 'dark' ? <HeroGlow /> : <HeroGlow color={brand.accent} strength={4} />}
         {children}
       </View>

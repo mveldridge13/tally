@@ -1,18 +1,19 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { TallyMark } from '@/components/brand';
 import { NotificationBell } from '@/components/notification-bell';
-import { CardText, Gutter, HeroScreen, SectionTitle, StatRow, SummaryCard, TotalPill, usePosition } from '@/components/dashboard';
+import { FlippingSummaryCard } from '@/components/summary-flip';
+import { CardText, Gutter, HeroScreen, StatRow, TotalPill, usePosition } from '@/components/dashboard';
 import { Bouncy, buzz, CountUp } from '@/components/fun';
 import { Avatar, Card, Notice, Text } from '@/components/ui';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { useMyId } from '@/lib/auth';
-import { useTallyData } from '@/lib/data';
+import { useMonthSpending, useTallyData } from '@/lib/data';
 import { firstName, greeting } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
@@ -59,19 +60,19 @@ function ToSettle({ items }: { items: ReturnType<typeof myTransfers> }) {
         <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={26} color={c.textMuted} />
       </Bouncy>
 
-      {open
-        ? items.length === 0
-          ? (
-              <Animated.View entering={FadeInDown.duration(220)}>
-                <AllSquareCard />
-              </Animated.View>
-            )
-          : items.map((t, i) => (
-              <Animated.View key={`${t.group.id}-${t.other}-${t.iOwe}`} entering={FadeInDown.delay(i * 40).duration(220)}>
-                <YouCard {...t} showGroup />
-              </Animated.View>
-            ))
-        : null}
+      {open ? (
+        items.length === 0 ? (
+          <Animated.View entering={FadeInDown.duration(220)}>
+            <AllSquareCard />
+          </Animated.View>
+        ) : (
+          items.map((t, i) => (
+            <Animated.View key={`${t.group.id}-${t.other}-${t.iOwe}`} entering={FadeInDown.delay(i * 40).duration(220)}>
+              <YouCard {...t} showGroup />
+            </Animated.View>
+          ))
+        )
+      ) : null}
     </Gutter>
   );
 }
@@ -89,6 +90,22 @@ export default function HomeScreen() {
   const wide = useWidthClass() === 'expanded';
 
   const { primary, others, owedTotal, oweTotal } = usePosition(summaries);
+  // Groups you were active in this calendar month (made, or had an expense or payment you can
+  // see, or you have a share of an expense in it), with your share of this month's spending.
+  const monthSpending = useMonthSpending();
+  const monthGroups = useMemo(() => {
+    const now = new Date();
+    const inMonth = (iso: string) => {
+      const d = new Date(iso);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    };
+    const active = new Set<string>(Object.keys(monthSpending ?? {}));
+    for (const e of data.expenses) if (inMonth(e.occurredAt)) active.add(e.groupId);
+    for (const s of data.settlements) if (inMonth(s.occurredAt)) active.add(s.groupId);
+    return data.groups
+      .filter((g) => active.has(g.id) || inMonth(g.createdAt))
+      .map((g) => ({ icon: g.icon, currency: g.currency, spent: monthSpending ? (monthSpending[g.id] ?? 0) : null }));
+  }, [data, monthSpending]);
 
   if (isLoading) {
     return (
@@ -128,7 +145,9 @@ export default function HomeScreen() {
         ) : null}
 
         <View style={{ gap: space.md }}>
-          <SectionTitle title="Quick actions" />
+          <Gutter>
+            <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: c.border }} />
+          </Gutter>
           <Gutter>
             <Bouncy
               accessibilityRole="button"
@@ -152,25 +171,30 @@ export default function HomeScreen() {
         </View>
 
         {hasGroups ? (
-          <SummaryCard tone="light">
-            <CardText variant="label" muted>
-              Your total position
-            </CardText>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 2 }}>
-              {sign ? <CardText style={big}>{sign}</CardText> : null}
-              <CountUp cents={Math.abs(primary.amount)} currency={primary.currency} style={[big, { color: brand.onCoral }]} />
-            </View>
-            <CardText variant="caption" muted>
-              {(primary.amount === 0 ? 'You’re all square 🎉' : primary.amount > 0 ? `You’re owed ${where}` : `You owe ${where}`) +
-                (others.length > 0
-                  ? ` · also ${others.map((o) => `${o.amount >= 0 ? '+' : '−'}${formatMoney(Math.abs(o.amount), o.currency)}`).join(', ')}`
-                  : '')}
-            </CardText>
-            <StatRow>
-              <TotalPill label="You’re owed" cents={owedTotal} currency={primary.currency} tone="owed" />
-              <TotalPill label="You owe" cents={oweTotal} currency={primary.currency} tone="owe" />
-            </StatRow>
-          </SummaryCard>
+          <FlippingSummaryCard
+            groups={monthGroups}
+            front={
+              <>
+                <CardText variant="label" muted>
+                  Your total position
+                </CardText>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 2 }}>
+                  {sign ? <CardText style={big}>{sign}</CardText> : null}
+                  <CountUp cents={Math.abs(primary.amount)} currency={primary.currency} style={[big, { color: brand.onCoral }]} />
+                </View>
+                <CardText variant="caption" muted>
+                  {(primary.amount === 0 ? 'You’re all square 🎉' : primary.amount > 0 ? `You’re owed ${where}` : `You owe ${where}`) +
+                    (others.length > 0
+                      ? ` · also ${others.map((o) => `${o.amount >= 0 ? '+' : '−'}${formatMoney(Math.abs(o.amount), o.currency)}`).join(', ')}`
+                      : '')}
+                </CardText>
+                <StatRow>
+                  <TotalPill label="You’re owed" cents={owedTotal} currency={primary.currency} tone="owed" />
+                  <TotalPill label="You owe" cents={oweTotal} currency={primary.currency} tone="owe" />
+                </StatRow>
+              </>
+            }
+          />
         ) : (
           <Gutter>
             <Card style={{ gap: space.sm }}>

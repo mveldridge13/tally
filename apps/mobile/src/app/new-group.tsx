@@ -12,6 +12,7 @@ import { Bouncy, buzz, Confetti } from '@/components/fun';
 import { SplitPartnerSheet, useSelection } from '@/components/split-partners';
 import { Avatar, Button, Notice, Text } from '@/components/ui';
 import { CURRENCIES, isSupportedCurrency, type Currency } from '@/lib/currencies';
+import { GROUP_TYPES, type GroupType } from '@/lib/group-types';
 import { useAddGuest, useAddMembers, useCreateGroup, useSplitPartners, useTallyData } from '@/lib/data';
 import { useMyId } from '@/lib/auth';
 import { groupColor, radius, space, type as typeScale, useColors } from '@/theme';
@@ -26,17 +27,6 @@ const CURRENCY_INFO: Record<Currency, { symbol: string; name: string }> = {
   SGD: { symbol: 'S$', name: 'Singapore dollars' },
   INR: { symbol: '₹', name: 'Indian rupees' },
 };
-
-/** What the group is for. The emoji is saved as the group's icon; "Other" uses the name's first letter. */
-const GROUP_TYPES = [
-  { id: 'trip', label: 'Trip', emoji: '✈️', names: ['Weekend away', 'Road trip', 'Holiday'] },
-  { id: 'home', label: 'Home', emoji: '🏠', names: ['Our place', 'Bills', 'Household'] },
-  { id: 'housemates', label: 'Housemates', emoji: '🛋️', names: ['Flat bills', 'Groceries', 'House fund'] },
-  { id: 'family', label: 'Family', emoji: '👨‍👩‍👧', names: ['Christmas', 'Birthday gift', 'Family'] },
-  { id: 'dining', label: 'Dining', emoji: '🍽️', names: ['Friday dinners', 'Brunch club', 'Pizza night'] },
-  { id: 'other', label: 'Other', emoji: null, names: ['Book club', 'Footy tips', 'Gift'] },
-] as const;
-type GroupType = (typeof GROUP_TYPES)[number];
 
 /** How many faces show on "Who's in?" before See all. */
 const FIRST_FACES = 8;
