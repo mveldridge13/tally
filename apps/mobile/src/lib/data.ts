@@ -1,4 +1,4 @@
-import { type PayIdType, computeSplit, type Balances, type Cents, type SplitInput, type SplitShare, type Transfer } from '@tally/shared';
+import { type PayIdType, computeSplit, type Balances, type Cents, type SplitInput, type SplitItem, type SplitShare, type Transfer } from '@tally/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
@@ -58,6 +58,8 @@ export interface Expense {
   createdById: string;
   method: SplitInput['method'];
   splits: ExpenseSplit[];
+  /** The bill's lines when split by item; null for the other methods. */
+  items: SplitItem[] | null;
   occurredAt: string;
   createdAt: string;
   updatedAt: string;
@@ -131,7 +133,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
         `id, name, currency, icon, created_at,
          group_members ( user_id, role, left_at, profiles ( id, name, is_guest ) ),
          expenses ( id, description, amount_cents, payer_id, created_by, split_method, occurred_at,
-                    created_at, updated_at, deleted_at,
+                    created_at, updated_at, deleted_at, items,
                     expense_splits ( user_id, amount_cents, weight ) ),
          settlements ( id, from_user_id, to_user_id, amount_cents, occurred_at, status, created_by, created_at, note, replaces_id )`,
       )
@@ -205,6 +207,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
         createdById: e.created_by,
         method: e.split_method,
         splits: e.expense_splits.map((s) => ({ userId: s.user_id, amount: s.amount_cents, weight: s.weight })),
+        items: Array.isArray(e.items) ? (e.items as RpcItem[]).map(fromRpcItem) : null,
         occurredAt: e.occurred_at,
         createdAt: e.created_at,
         updatedAt: e.updated_at,
@@ -362,6 +365,20 @@ function toRpcSplits(amount: Cents, split: SplitInput) {
   return shares.map((s) => ({ user_id: s.userId, amount_cents: s.amount, weight: weights.get(s.userId) ?? null }));
 }
 
+/** How an item is stored on the expense. */
+type RpcItem = {
+  name: string;
+  amount_cents: number;
+  user_ids: string[];
+};
+
+const fromRpcItem = (i: RpcItem): SplitItem => ({ name: i.name, amount: i.amount_cents, userIds: i.user_ids });
+
+function toRpcItems(split: SplitInput): RpcItem[] | undefined {
+  if (split.method !== 'items') return undefined;
+  return split.items.map((i) => ({ name: i.name.trim(), amount_cents: i.amount, user_ids: i.userIds }));
+}
+
 export interface ExpenseInput {
   description: string;
   amount: Cents;
@@ -380,6 +397,7 @@ export function useCreateExpense() {
       p_split_method: input.split.method,
       p_occurred_at: input.occurredAt,
       p_splits: toRpcSplits(input.amount, input.split),
+      p_items: toRpcItems(input.split),
     });
     if (error) throw error;
     return data;
@@ -396,6 +414,7 @@ export function useUpdateExpense() {
       p_split_method: input.split.method,
       p_occurred_at: input.occurredAt,
       p_splits: toRpcSplits(input.amount, input.split),
+      p_items: toRpcItems(input.split),
     });
     if (error) throw error;
   });

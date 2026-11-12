@@ -110,6 +110,67 @@ describe('computeSplit', () => {
     ]);
   });
 
+  it('splits by item, sharing an item only between the people who had it', () => {
+    // $90 dinner: pasta (a), steak (b), salad (c), garlic bread shared by all three.
+    const split = computeSplit(9000, {
+      method: 'items',
+      items: [
+        { name: 'Pasta', amount: 2500, userIds: ['a'] },
+        { name: 'Steak', amount: 4000, userIds: ['b'] },
+        { name: 'Salad', amount: 1500, userIds: ['c'] },
+        { name: 'Garlic bread', amount: 1000, userIds: ['a', 'b', 'c'] },
+      ],
+    });
+    expect(split).toEqual([
+      { userId: 'a', amount: 2834 },
+      { userId: 'b', amount: 4333 },
+      { userId: 'c', amount: 1833 },
+    ]);
+  });
+
+  it('shares tax and tip on top of the items in proportion to what each person had', () => {
+    // Items come to $100; the bill is $110. a had $75 of it, b $25, so a pays 3/4 of the extra $10.
+    expect(
+      computeSplit(11_000, {
+        method: 'items',
+        items: [
+          { name: 'Mains', amount: 7500, userIds: ['a'] },
+          { name: 'Dessert', amount: 2500, userIds: ['b'] },
+        ],
+      }),
+    ).toEqual([
+      { userId: 'a', amount: 8250 },
+      { userId: 'b', amount: 2750 },
+    ]);
+  });
+
+  it('rejects items that are empty, unassigned or more than the total', () => {
+    expect(() => computeSplit(100, { method: 'items', items: [] })).toThrow(
+      expect.objectContaining({ code: 'NO_ITEMS' }),
+    );
+    expect(() =>
+      computeSplit(100, { method: 'items', items: [{ name: 'Chips', amount: 100, userIds: [] }] }),
+    ).toThrow(expect.objectContaining({ code: 'NO_PARTICIPANTS' }));
+    expect(() =>
+      computeSplit(100, { method: 'items', items: [{ name: 'Chips', amount: 0, userIds: ['a'] }] }),
+    ).toThrow(expect.objectContaining({ code: 'INVALID_SHARE' }));
+    expect(() =>
+      computeSplit(100, { method: 'items', items: [{ name: 'Chips', amount: 150, userIds: ['a'] }] }),
+    ).toThrow(expect.objectContaining({ code: 'ITEMS_EXCEED_TOTAL' }));
+  });
+
+  it('accepts an items split in the expense schema', () => {
+    const parsed = createExpenseSchema.safeParse({
+      groupId: 'g',
+      description: 'Dinner',
+      amount: 1000,
+      payerId: 'a',
+      date: new Date().toISOString(),
+      split: { method: 'items', items: [{ name: 'Pizza', amount: 1000, userIds: ['a', 'b'] }] },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('rejects bad input', () => {
     expect(() => computeSplit(0, { method: 'equal', participants: ['a'] })).toThrow(SplitError);
     expect(() => computeSplit(10.5, { method: 'equal', participants: ['a'] })).toThrow();
@@ -137,6 +198,21 @@ describe('computeSplit', () => {
         { method: 'equal', participants: people },
         { method: 'shares', shares: people.map((userId) => ({ userId, units: 1 + rand(5) })) },
       ];
+      // Items that use up a random part of the total, each shared by a random set of people.
+      const items = Array.from({ length: 1 + rand(6) }, (_, k) => ({
+        name: `item${k}`,
+        amount: 1,
+        userIds: people.filter((_, j) => j === k % people.length || rand(2) === 0),
+      }));
+      let room = total - items.length;
+      if (room >= 0) {
+        for (const item of items) {
+          const more = rand(Math.floor(room / 2) + 1);
+          item.amount += more;
+          room -= more;
+        }
+        inputs.push({ method: 'items', items });
+      }
       for (const input of inputs) {
         const split = computeSplit(total, input);
         expect(sum(split)).toBe(total);

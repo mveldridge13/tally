@@ -23,6 +23,18 @@ export const splitInputSchema = z.discriminatedUnion('method', [
     method: z.literal('shares'),
     shares: z.array(z.object({ userId: idSchema, units: z.number().int().nonnegative() })).min(1),
   }),
+  z.object({
+    method: z.literal('items'),
+    items: z
+      .array(
+        z.object({
+          name: z.string().trim().min(1).max(60),
+          amount: positiveCentsSchema,
+          userIds: z.array(idSchema).min(1),
+        }),
+      )
+      .min(1),
+  }),
 ]);
 
 export const createExpenseSchema = z.object({

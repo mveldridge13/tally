@@ -1,4 +1,4 @@
-import { centsToDecimalString, formatMoney } from '@tally/shared';
+import { centsToDecimalString, formatMoney, itemsSubtotal } from '@tally/shared';
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
 
@@ -14,6 +14,7 @@ const METHOD_LABEL = {
   exact: 'Split by amounts',
   percentage: 'Split by percentage',
   shares: 'Split by shares',
+  items: 'Split by item',
 } as const;
 
 function formatDateTime(iso: string) {
@@ -122,6 +123,50 @@ export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; em
         <Gutter>
           <Notice>{deleteExpense.error.message}</Notice>
         </Gutter>
+      ) : null}
+
+      {expense.items ? (
+        <View style={{ gap: space.md }}>
+          <SectionTitle title="Items" />
+          <Gutter>
+            <Card style={{ paddingVertical: 0 }}>
+              {expense.items.map((item, i) => (
+                <View key={i}>
+                  {i > 0 ? <Divider /> : null}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text variant="heading" numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text variant="caption" muted numberOfLines={2}>
+                        {item.userIds.length === 1 ? name(item.userIds[0]!) : `Shared by ${item.userIds.map(name).join(', ')}`}
+                      </Text>
+                    </View>
+                    <Text variant="heading" style={{ fontVariant: ['tabular-nums'] }}>
+                      {money(item.amount)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+              {expense.amount > itemsSubtotal(expense.items) ? (
+                <>
+                  <Divider />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text variant="heading">Tax, tip & extras</Text>
+                      <Text variant="caption" muted>
+                        Shared in proportion to what each person had
+                      </Text>
+                    </View>
+                    <Text variant="heading" style={{ fontVariant: ['tabular-nums'] }}>
+                      {money(expense.amount - itemsSubtotal(expense.items))}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+            </Card>
+          </Gutter>
+        </View>
       ) : null}
 
       <View style={{ gap: space.md }}>

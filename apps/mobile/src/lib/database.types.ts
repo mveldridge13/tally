@@ -106,6 +106,7 @@ export type Database = {
           description: string;
           group_id: string;
           id: string;
+          items: Json | null;
           notes: string | null;
           occurred_at: string;
           payer_id: string;
@@ -122,6 +123,7 @@ export type Database = {
           description: string;
           group_id: string;
           id?: string;
+          items?: Json | null;
           notes?: string | null;
           occurred_at?: string;
           payer_id: string;
@@ -137,6 +139,7 @@ export type Database = {
           description?: string;
           group_id?: string;
           id?: string;
+          items?: Json | null;
           notes?: string | null;
           occurred_at?: string;
           payer_id?: string;
@@ -617,6 +620,7 @@ export type Database = {
           p_notes?: string;
           p_occurred_at?: string;
           p_payer_id: string;
+          p_items?: Json;
           p_split_method: Database['public']['Enums']['split_method'];
           p_splits: Json;
         };
@@ -730,6 +734,7 @@ export type Database = {
           p_notes?: string;
           p_occurred_at: string;
           p_payer_id: string;
+          p_items?: Json;
           p_split_method: Database['public']['Enums']['split_method'];
           p_splits: Json;
         };
@@ -741,7 +746,7 @@ export type Database = {
     Enums: {
       group_role: 'owner' | 'admin' | 'member';
       settlement_status: 'recorded' | 'voided';
-      split_method: 'equal' | 'exact' | 'percentage' | 'shares';
+      split_method: 'equal' | 'exact' | 'percentage' | 'shares' | 'items';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -853,7 +858,7 @@ export const Constants = {
     Enums: {
       group_role: ['owner', 'admin', 'member'],
       settlement_status: ['recorded', 'voided'],
-      split_method: ['equal', 'exact', 'percentage', 'shares'],
+      split_method: ['equal', 'exact', 'percentage', 'shares', 'items'],
     },
   },
 } as const;

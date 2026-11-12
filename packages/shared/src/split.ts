@@ -9,7 +9,17 @@ export type SplitInput =
   | { method: 'equal'; participants: UserId[] }
   | { method: 'exact'; shares: { userId: UserId; amount: Cents }[] }
   | { method: 'percentage'; shares: { userId: UserId; basisPoints: number }[] }
-  | { method: 'shares'; shares: { userId: UserId; units: number }[] };
+  | { method: 'shares'; shares: { userId: UserId; units: number }[] }
+  | { method: 'items'; items: SplitItem[] };
+
+/**
+ * One line of a bill (split by item). The price is shared equally by the people who had it.
+ */
+export interface SplitItem {
+  name: string;
+  amount: Cents;
+  userIds: UserId[];
+}
 
 export type SplitMethod = SplitInput['method'];
 
@@ -25,7 +35,9 @@ export type SplitErrorCode =
   | 'INVALID_SHARE'
   | 'EXACT_SUM_MISMATCH'
   | 'PERCENT_SUM_MISMATCH'
-  | 'ZERO_UNITS';
+  | 'ZERO_UNITS'
+  | 'NO_ITEMS'
+  | 'ITEMS_EXCEED_TOTAL';
 
 export class SplitError extends Error {
   constructor(
@@ -116,7 +128,62 @@ export function computeSplit(total: Cents, input: SplitInput): SplitShare[] {
         input.shares.map((s) => ({ userId: s.userId, weight: s.units })),
       );
     }
+
+    case 'items':
+      return splitByItems(total, input.items);
   }
+}
+
+/**
+ * Split by item. Each item's price is shared equally by the people who had it. Anything the
+ * total has on top of the items (tax, tip, service charge) is shared in proportion to what each
+ * person's items cost, so someone who ordered more pays more of the tip.
+ *
+ * People are listed in the order they first appear in the items.
+ */
+export function splitByItems(total: Cents, items: SplitItem[]): SplitShare[] {
+  if (items.length === 0) {
+    throw new SplitError('NO_ITEMS', 'Add at least one item');
+  }
+  const subtotals = new Map<UserId, number>();
+  let itemsTotal = 0;
+  for (const item of items) {
+    if (!Number.isSafeInteger(item.amount) || item.amount <= 0) {
+      throw new SplitError('INVALID_SHARE', `Enter a price for ${item.name.trim() || 'every item'}`);
+    }
+    if (item.userIds.length === 0) {
+      throw new SplitError('NO_PARTICIPANTS', `Choose who had ${item.name.trim() || 'every item'}`);
+    }
+    const ids = uniqueIds(item.userIds);
+    for (const share of allocateByWeights(
+      item.amount,
+      ids.map((userId) => ({ userId, weight: 1 })),
+    )) {
+      subtotals.set(share.userId, (subtotals.get(share.userId) ?? 0) + share.amount);
+    }
+    itemsTotal += item.amount;
+  }
+
+  const extra = total - itemsTotal;
+  if (extra < 0) {
+    throw new SplitError(
+      'ITEMS_EXCEED_TOTAL',
+      `Items add up to ${itemsTotal} but the expense total is ${total}`,
+    );
+  }
+
+  const people = [...subtotals.entries()].map(([userId, amount]) => ({ userId, amount }));
+  if (extra === 0) return people;
+  const extras = allocateByWeights(
+    extra,
+    people.map((p) => ({ userId: p.userId, weight: p.amount })),
+  );
+  return people.map((p, i) => ({ userId: p.userId, amount: p.amount + extras[i]!.amount }));
+}
+
+/** What the items add up to, before tax, tip and other extras. */
+export function itemsSubtotal(items: SplitItem[]): Cents {
+  return items.reduce((sum, item) => sum + item.amount, 0);
 }
 
 function uniqueIds(ids: UserId[]): UserId[] {

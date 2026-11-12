@@ -3,6 +3,7 @@ import {
   computeSplit,
   FULL_PERCENT_BPS,
   formatMoney,
+  itemsSubtotal,
   parseToCents,
   SplitError,
   type SplitInput,
@@ -17,7 +18,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } 
 import { Gutter, HeroScreen, onDeepMuted } from '@/components/dashboard';
 import { GroupIcon, Sheet } from '@/components/friendly';
 import { buzz } from '@/components/fun';
-import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
+import { Avatar, Button, Card, Chip, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { useCreateExpense, useNameOf, useTallyData, useUpdateExpense, type Expense } from '@/lib/data';
 import { useAfterTransition } from '@/lib/transitions';
@@ -36,7 +37,23 @@ const METHODS: { id: SplitMethod; label: string; hint: string }[] = [
     label: 'Shares',
     hint: 'Someone with 2 shares pays twice as much as someone with 1.',
   },
+  {
+    id: 'items',
+    label: 'Items',
+    hint: 'Add each item and tap who had it. Tax or tip on top of the items is shared in proportion to what each person had.',
+  },
 ];
+
+/** An item as typed on the form: the price stays text until it's parsed. */
+interface ItemRow {
+  key: number;
+  name: string;
+  price: string;
+  userIds: string[];
+}
+
+let nextItemKey = 1;
+const newItem = (): ItemRow => ({ key: nextItemKey++, name: '', price: '', userIds: [] });
 
 type Preview = { ok: true; shares: { userId: string; amount: number }[] } | { ok: false; error: string };
 
@@ -53,7 +70,7 @@ function currencySymbol(currency: string): string {
 
 /** Form state derived from a saved expense, so editing shows exactly what was entered. */
 function initialFromExpense(expense: Expense | undefined, memberIds: string[]) {
-  if (!expense) return { included: {}, values: {} };
+  if (!expense) return { included: {}, values: {}, items: [newItem()] };
   const inSplit = new Map(expense.splits.map((s) => [s.userId, s]));
   const included: Record<string, boolean> = {};
   const values: Record<string, string> = {};
@@ -65,7 +82,13 @@ function initialFromExpense(expense: Expense | undefined, memberIds: string[]) {
     if (expense.method === 'percentage' && s.weight != null) values[id] = centsToDecimalString(s.weight).replace(/\.00$/, '');
     if (expense.method === 'shares' && s.weight != null) values[id] = String(s.weight);
   }
-  return { included, values };
+  const items: ItemRow[] = expense.items?.map((i) => ({
+    key: nextItemKey++,
+    name: i.name,
+    price: centsToDecimalString(i.amount),
+    userIds: i.userIds,
+  })) ?? [newItem()];
+  return { included, values, items };
 }
 
 // ─── Small themed controls ───────────────────────────────────────────────────
@@ -124,7 +147,7 @@ function Segmented({ value, onChange }: { value: SplitMethod; onChange: (m: Spli
               backgroundColor: selected ? c.surface : 'transparent',
               elevation: selected ? 1 : 0,
             }}>
-            <Text variant="label" color={selected ? c.text : c.textMuted}>
+            <Text variant="label" color={selected ? c.text : c.textMuted} numberOfLines={1} adjustsFontSizeToFit>
               {m.label}
             </Text>
           </Pressable>
@@ -207,11 +230,15 @@ export default function ExpenseFormScreen() {
   const [method, setMethod] = useState<SplitMethod>(editing?.method ?? 'equal');
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
+  const [items, setItems] = useState<ItemRow[]>(initial.items);
+  const updateItem = (key: number, change: Partial<ItemRow>) =>
+    setItems((list) => list.map((i) => (i.key === key ? { ...i, ...change } : i)));
   function pickGroup(id: string) {
     setGroupId(id);
     setPayerId(myId);
     setIncluded({});
     setValues({});
+    setItems([newItem()]);
   }
   // Back from New group with a fresh group: use it (keeps the amount and description already typed).
   const [seenNewGroup, setSeenNewGroup] = useState(params.newGroupId);
@@ -278,12 +305,22 @@ export default function ExpenseFormScreen() {
               units: Number.parseInt(values[userId] || '1', 10),
             })),
           };
+        case 'items':
+          // Unnamed items get a plain name, so a quick "price + who" entry still saves.
+          return {
+            method,
+            items: items.map((item, i) => ({
+              name: item.name.trim() || `Item ${i + 1}`,
+              amount: parseToCents(item.price || '0'),
+              userIds: members.filter((id) => item.userIds.includes(id)),
+            })),
+          };
       }
     } catch {
       return 'Check the numbers you entered.';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantKey, method, values]);
+  }, [participantKey, method, values, items, members]);
 
   const preview: Preview = useMemo(() => {
     if (!Number.isFinite(amount)) return { ok: false, error: 'Enter a valid amount, like 12.50.' };
@@ -313,8 +350,18 @@ export default function ExpenseFormScreen() {
       const pct = centsToDecimalString(Math.abs(left)).replace(/\.00$/, '');
       return left > 0 ? `${pct}% left to assign` : `${pct}% too much assigned`;
     }
+    if (splitInput.method === 'items' && Number.isFinite(amount) && amount > 0) {
+      const over = itemsSubtotal(splitInput.items) - amount;
+      return over > 0 ? `Items come to ${formatMoney(over, group.currency)} more than the total` : null;
+    }
     return null;
   }, [splitInput, amount, group]);
+
+  /** For an items split: what the items come to, and what's left over for tax, tip and extras. */
+  const itemTotals =
+    typeof splitInput !== 'string' && splitInput.method === 'items'
+      ? { items: itemsSubtotal(splitInput.items), extra: Number.isFinite(amount) ? amount - itemsSubtotal(splitInput.items) : 0 }
+      : null;
 
   const title = isEdit ? 'Edit expense' : 'New expense';
   if (isEdit && !editing) {
@@ -368,17 +415,20 @@ export default function ExpenseFormScreen() {
   }
 
   const payerLabel = payerId === myId ? 'you' : name(payerId);
-  const n = participantIds.length;
+  const n = method === 'items' ? new Set(items.flatMap((i) => i.userIds)).size : participantIds.length;
   const methodWords: Record<SplitMethod, string> = {
     equal: 'equally',
     exact: 'by amounts',
     percentage: 'by percentage',
     shares: 'by shares',
+    items: 'by item',
   };
   const splitLine =
     method === 'equal' && preview.ok && group && n > 0
       ? `Split equally between ${n} · ${formatMoney(Math.floor(amount / n), group.currency)} each`
-      : `Split ${methodWords[method]} between ${n} ${n === 1 ? 'person' : 'people'}`;
+      : method === 'items'
+        ? `Split by item · ${items.length} ${items.length === 1 ? 'item' : 'items'} between ${n} ${n === 1 ? 'person' : 'people'}`
+        : `Split ${methodWords[method]} between ${n} ${n === 1 ? 'person' : 'people'}`;
   // Only flag split problems here; a missing amount or description is obvious on the form.
   const splitProblem = amountText && Number.isFinite(amount) && amount > 0 && !preview.ok ? (remaining ?? preview.error) : null;
   const canPickGroup = !isEdit && !params.groupId;
@@ -559,9 +609,112 @@ export default function ExpenseFormScreen() {
           <Text variant="caption" muted>
             {METHODS.find((m) => m.id === method)?.hint}
           </Text>
+          {method === 'items' ? (
+            <View style={{ gap: space.sm }}>
+              {items.map((item, index) => (
+                <Card key={item.key} style={{ gap: space.sm }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                    <TextInput
+                      value={item.name}
+                      onChangeText={(v) => updateItem(item.key, { name: v })}
+                      placeholder={`Item ${index + 1}`}
+                      placeholderTextColor={c.textMuted}
+                      maxLength={60}
+                      selectionColor={c.focus}
+                      accessibilityLabel={`Item ${index + 1} name`}
+                      style={{
+                        ...type.body,
+                        flex: 1,
+                        color: c.text,
+                        backgroundColor: c.surfaceAlt,
+                        borderRadius: radius.sm,
+                        paddingHorizontal: space.sm,
+                        paddingVertical: space.sm,
+                      }}
+                    />
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: c.surfaceAlt,
+                        borderRadius: radius.sm,
+                        paddingHorizontal: space.sm,
+                      }}>
+                      <Text muted>{group ? currencySymbol(group.currency) : ''}</Text>
+                      <TextInput
+                        value={item.price}
+                        onChangeText={(v) => updateItem(item.key, { price: v })}
+                        placeholder="0.00"
+                        placeholderTextColor={c.textMuted}
+                        keyboardType="decimal-pad"
+                        selectionColor={c.focus}
+                        accessibilityLabel={`${item.name.trim() || `Item ${index + 1}`} price`}
+                        style={{ ...type.body, color: c.text, width: 72, textAlign: 'right', paddingVertical: space.sm }}
+                      />
+                    </View>
+                    {items.length > 1 ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove ${item.name.trim() || `item ${index + 1}`}`}
+                        onPress={() => setItems((list) => list.filter((i) => i.key !== item.key))}
+                        hitSlop={8}
+                        style={{ paddingHorizontal: space.xs }}>
+                        <Text muted style={{ fontSize: 20 }}>
+                          ×
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <Text variant="caption" muted>
+                    Who had it?
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
+                    {members.map((id) => {
+                      const had = item.userIds.includes(id);
+                      return (
+                        <Chip
+                          key={id}
+                          label={id === myId ? 'You' : name(id)}
+                          selected={had}
+                          onPress={() =>
+                            updateItem(item.key, {
+                              userIds: had ? item.userIds.filter((u) => u !== id) : [...item.userIds, id],
+                            })
+                          }
+                        />
+                      );
+                    })}
+                  </View>
+                </Card>
+              ))}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setItems((list) => [...list, newItem()])}
+                style={{
+                  alignItems: 'center',
+                  padding: space.md,
+                  borderRadius: radius.lg,
+                  borderWidth: 1.5,
+                  borderStyle: 'dashed',
+                  borderColor: c.border,
+                }}>
+                <Text variant="label" color={c.primary}>
+                  ＋ Add item
+                </Text>
+              </Pressable>
+              {itemTotals && group ? (
+                <Text variant="caption" muted style={{ textAlign: 'center' }}>
+                  Items {formatMoney(itemTotals.items, group.currency)}
+                  {itemTotals.extra > 0 && amount > 0
+                    ? ` · ${formatMoney(itemTotals.extra, group.currency)} tax, tip & extras, shared in proportion`
+                    : ''}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           <Card style={{ paddingVertical: space.xs }}>
             {members.map((id, i) => {
-              const on = isIncluded(id);
+              const on = method === 'items' ? items.some((item) => item.userIds.includes(id)) : isIncluded(id);
               const share = preview.ok ? preview.shares.find((s) => s.userId === id) : undefined;
               return (
                 <View key={id}>
@@ -574,11 +727,15 @@ export default function ExpenseFormScreen() {
                       paddingVertical: space.md,
                       opacity: on ? 1 : 0.55,
                     }}>
-                    <Tick on={on} label={name(id)} onPress={() => setIncluded((s) => ({ ...s, [id]: !on }))} />
+                    {method === 'items' ? (
+                      <Avatar name={name(id)} size={26} color={on ? groupColor(id) : undefined} />
+                    ) : (
+                      <Tick on={on} label={name(id)} onPress={() => setIncluded((s) => ({ ...s, [id]: !on }))} />
+                    )}
                     <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
                       {id === myId ? 'You' : name(id)}
                     </Text>
-                    {method !== 'equal' && on ? (
+                    {method !== 'equal' && method !== 'items' && on ? (
                       <View
                         style={{
                           flexDirection: 'row',
