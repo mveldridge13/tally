@@ -8,7 +8,7 @@
     "scheme": "tally",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "app.tally.mobile"
     },
     "android": {

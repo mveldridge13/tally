@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useMemo, useState, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { TallyMark } from '@/components/brand';
@@ -10,11 +10,12 @@ import { Bouncy, buzz, CountUp } from '@/components/fun';
 import { Bubble } from '@/components/group-visuals';
 import { Card, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
-import { useTallyData } from '@/lib/data';
+import { useNameOf, useTallyData } from '@/lib/data';
+import { matchesSearch } from '@/lib/search';
 import { dayLabel } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { useActivity, type ActivityItem } from '@/store/hooks';
-import { brand, radius, space, useColors, type Colors } from '@/theme';
+import { brand, radius, space, type, useColors, type Colors } from '@/theme';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
 
 type Kind = 'all' | 'expenses' | 'payments' | 'mine';
@@ -84,6 +85,14 @@ export default function ActivityScreen() {
   const [kind, setKind] = useState<Kind>('all');
   const [groupId, setGroupId] = useState<string>('all');
   const [pickingGroup, setPickingGroup] = useState(false);
+  // Search: the 🔍 in the header opens a box; the summary card steps aside while it's open.
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState('');
+  const name = useNameOf();
+  const closeSearch = () => {
+    setSearching(false);
+    setQuery('');
+  };
   // Tap a figure on the card to show only those items; tap it again to show everything.
   const toggle = (k: Exclude<Kind, 'all'>) => setKind((cur) => (cur === k ? 'all' : k));
   const pickedGroup = groupId === 'all' ? undefined : data.groups.find((g) => g.id === groupId);
@@ -118,9 +127,16 @@ export default function ActivityScreen() {
           (kind === 'all' ||
             (kind === 'expenses' && i.kind === 'expense') ||
             (kind === 'payments' && i.kind === 'settlement') ||
-            (kind === 'mine' && i.involved)),
+            (kind === 'mine' && i.involved)) &&
+          matchesSearch(i, query, {
+            expense: i.kind === 'expense' ? data.expenses.find((e) => e.id === i.id) : undefined,
+            group: data.groups.find((g) => g.id === i.groupId),
+            name,
+          }),
       ),
-    [all, kind, groupId],
+    // name reads data, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [all, kind, groupId, query, data],
   );
 
   // How many of each kind are in the feed (for the chosen group), shown on the card.
@@ -201,6 +217,51 @@ export default function ActivityScreen() {
         </Gutter>
       ) : null}
 
+      {/* Search box, opened from the 🔍 in the header. */}
+      {searching ? (
+        <Gutter>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space.sm,
+              paddingLeft: space.md,
+              paddingRight: space.xs,
+              borderRadius: radius.pill,
+              backgroundColor: c.surface,
+              borderWidth: 2,
+              borderColor: c.focus,
+            }}>
+            <MaterialIcons name="search" size={22} color={c.textMuted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              autoFocus
+              placeholder="Search expenses, people, groups…"
+              placeholderTextColor={c.textMuted}
+              selectionColor={c.focus}
+              returnKeyType="search"
+              autoCorrect={false}
+              accessibilityLabel="Search activity"
+              style={{ ...type.body, flex: 1, color: c.text, paddingVertical: space.md }}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close search"
+              onPress={closeSearch}
+              hitSlop={8}
+              style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }}>
+              <MaterialIcons name="close" size={20} color={c.textMuted} />
+            </Pressable>
+          </View>
+          {query.trim() && sections.length > 0 ? (
+            <Text variant="caption" muted style={{ paddingHorizontal: space.xs }}>
+              {filtered.length} {filtered.length === 1 ? 'match' : 'matches'}
+            </Text>
+          ) : null}
+        </Gutter>
+      ) : null}
+
       {/* One compact group picker instead of a row of chips per group. */}
       {hasAny && data.groups.length > 1 ? (
         <Gutter>
@@ -247,7 +308,21 @@ export default function ActivityScreen() {
 
       {hasAny && sections.length === 0 ? (
         <Gutter>
-          <Empty emoji="🔍" text="Nothing matches these filters." />
+          {query.trim() ? (
+            <Card style={{ alignItems: 'center', gap: space.sm, paddingVertical: space.xl }}>
+              <Text style={{ fontSize: 40 }}>🔍</Text>
+              <Text muted style={{ textAlign: 'center' }}>
+                Nothing matches “{query.trim()}”{groupId === 'all' && kind === 'all' ? '' : ' with these filters'}.
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => setQuery('')} hitSlop={8}>
+                <Text variant="label" color={c.primary}>
+                  Clear search
+                </Text>
+              </Pressable>
+            </Card>
+          ) : (
+            <Empty emoji="🔍" text="Nothing matches these filters." />
+          )}
         </Gutter>
       ) : null}
 
@@ -291,7 +366,30 @@ export default function ActivityScreen() {
         nav="tab"
         title="Activity"
         subtitle={hasAny ? 'Across all your groups' : 'Nothing yet'}
-        card={card}
+        right={
+          hasAny && !searching ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Search activity"
+              onPress={() => {
+                buzz.tap();
+                setSearching(true);
+              }}
+              hitSlop={12}
+              style={({ pressed }) => ({
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: c.surfaceAlt,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.7 : 1,
+              })}>
+              <MaterialIcons name="search" size={22} color={c.text} />
+            </Pressable>
+          ) : undefined
+        }
+        card={searching ? undefined : card}
         cardTone="light"
         fullWidth={wide}
         refreshing={pull.refreshing}
