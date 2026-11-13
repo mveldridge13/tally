@@ -13,7 +13,8 @@ import { Bouncy, buzz, CountUp } from '@/components/fun';
 import { Avatar, Card, Notice, Text } from '@/components/ui';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { useMyId } from '@/lib/auth';
-import { useMonthSpending, useTallyData } from '@/lib/data';
+import { useMonthSpending, usePaymentsToConfirm, useTallyData } from '@/lib/data';
+import { ConfirmPaymentCard } from '@/components/confirm-payment';
 import { firstName, greeting } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
 import { usePullToRefresh } from '@/lib/pull-to-refresh';
@@ -105,6 +106,7 @@ export default function HomeScreen() {
   const { data, isLoading, error, refetch } = useTallyData();
   const pull = usePullToRefresh(refetch);
   const summaries = useGroupSummaries();
+  const { data: toConfirm } = usePaymentsToConfirm();
   const wide = useWidthClass() === 'expanded';
 
   const { primary, others, owedTotal, oweTotal } = usePosition(summaries);
@@ -224,6 +226,15 @@ export default function HomeScreen() {
             </Card>
           </Gutter>
         )}
+
+        {/* Payments people say they made to you: confirm them so they count. */}
+        {toConfirm.length > 0 ? (
+          <Gutter>
+            {toConfirm.map((p) => (
+              <ConfirmPaymentCard key={p.id} payment={p} />
+            ))}
+          </Gutter>
+        ) : null}
 
         {hasGroups ? (
           <ToSettle items={myTransfers(summaries, myId)} />

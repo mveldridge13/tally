@@ -5,7 +5,7 @@ import { Alert, View } from 'react-native';
 import { CardText, Gutter, HeroScreen, QuickAction, SectionTitle, StatRow, TotalPill, useCardInk } from '@/components/dashboard';
 import { Avatar, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
-import { useNameOf, useReplacedPayment, useTallyData, useVoidSettlement } from '@/lib/data';
+import { useNameOf, useRemindToConfirm, useReplacedPayment, useTallyData, useVoidSettlement } from '@/lib/data';
 import { relativeTime } from '@/lib/format';
 import { brand, space } from '@/theme';
 
@@ -45,8 +45,11 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
   const { data, isLoading } = useTallyData();
   const name = useNameOf();
   const voidSettlement = useVoidSettlement();
+  const remind = useRemindToConfirm();
 
-  const payment = data.settlements.find((s) => s.id === id);
+  // A payment still waiting for the receiver to confirm is kept apart; it opens here too.
+  const payment = data.settlements.find((s) => s.id === id) ?? data.pendingPayments.find((s) => s.id === id);
+  const pending = payment?.status === 'pending';
   const group = payment ? data.groups.find((g) => g.id === payment.groupId) : undefined;
   const replaced = useReplacedPayment(payment?.replacesId);
 
@@ -54,7 +57,9 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
     return (
       <HeroScreen variant={embedded ? 'card' : 'full'} nav={embedded ? 'none' : 'back'} title="Payment">
         <Gutter>
-          <Notice tone="info">{isLoading ? 'Loading…' : 'This payment has been undone or corrected.'}</Notice>
+          <Notice tone="info">
+            {isLoading ? 'Loading…' : 'This payment has been undone, corrected, or marked as not received.'}
+          </Notice>
         </Gutter>
       </HeroScreen>
     );
@@ -66,14 +71,26 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
   // Effect on your balance: paying someone back raises your balance; receiving lowers it.
   const myEffect = payment.fromUserId === myId ? payment.amount : payment.toUserId === myId ? -payment.amount : 0;
 
+  // You recorded it: you can cancel it and remind the receiver while it waits.
+  const mineToChase = pending && payment.createdById === myId;
+
+  function sendReminder() {
+    remind.mutate(payment!.id, {
+      onSuccess: () => Alert.alert('Reminder sent', `${to} has been asked to confirm the ${money}.`),
+      onError: (e) => Alert.alert('Couldn’t send the reminder', e instanceof Error ? e.message : 'Please try again.'),
+    });
+  }
+
   function confirmUndo() {
     Alert.alert(
-      'Undo this payment?',
-      `${from} → ${to}, ${money}. Use this if it was recorded by mistake. Balances will go back to what they were, and the payment stays in the history as undone.`,
+      pending ? 'Cancel this payment?' : 'Undo this payment?',
+      pending
+        ? `${from} → ${to}, ${money}. ${to} won’t be asked to confirm it any more. It stays in the history as cancelled.`
+        : `${from} → ${to}, ${money}. Use this if it was recorded by mistake. Balances will go back to what they were, and the payment stays in the history as undone.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Keep it', style: 'cancel' },
         {
-          text: 'Undo payment',
+          text: pending ? 'Cancel payment' : 'Undo payment',
           style: 'destructive',
           onPress: () =>
             voidSettlement.mutate(payment!.id, {
@@ -95,11 +112,15 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
         {formatDateTime(payment.occurredAt)}
       </CardText>
       <StatRow>
-        <TotalPill
-          label="Effect on you"
-          value={myEffect === 0 ? 'Not involved' : myEffect > 0 ? `Paid back ${money}` : `Received ${money}`}
-          tone={myEffect > 0 ? 'owed' : myEffect < 0 ? 'owe' : 'neutral'}
-        />
+        {pending ? (
+          <TotalPill label="Status" value={`Waiting for ${to} to confirm`} tone="neutral" />
+        ) : (
+          <TotalPill
+            label="Effect on you"
+            value={myEffect === 0 ? 'Not involved' : myEffect > 0 ? `Paid back ${money}` : `Received ${money}`}
+            tone={myEffect > 0 ? 'owed' : myEffect < 0 ? 'owe' : 'neutral'}
+          />
+        )}
       </StatRow>
     </>
   );
@@ -111,19 +132,34 @@ export function PaymentDetail({ id, embedded = false, onGone }: { id: string; em
       eyebrow={`${group.name} · Payment`}
       title={money}
       actions={
-        <>
-          <QuickAction
-            bold
-            icon="edit"
-            label="Correct"
-            onPress={() => router.push({ pathname: '/settle', params: { paymentId: payment.id } })}
-          />
-          <QuickAction bold icon="groups" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
-          <QuickAction bold icon="undo" label="Undo" danger onPress={confirmUndo} />
-        </>
+        pending ? (
+          <>
+            {mineToChase ? <QuickAction bold icon="notifications" label={`Remind ${to}`} onPress={sendReminder} /> : null}
+            <QuickAction bold icon="groups" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
+            {mineToChase ? <QuickAction bold icon="close" label="Cancel" danger onPress={confirmUndo} /> : null}
+          </>
+        ) : (
+          <>
+            <QuickAction
+              bold
+              icon="edit"
+              label="Correct"
+              onPress={() => router.push({ pathname: '/settle', params: { paymentId: payment.id } })}
+            />
+            <QuickAction bold icon="groups" label="Group" onPress={() => router.push(`/group/${group.id}`)} />
+            <QuickAction bold icon="undo" label="Undo" danger onPress={confirmUndo} />
+          </>
+        )
       }
       cardTone="light"
       card={card}>
+      {pending ? (
+        <Gutter>
+          <Notice tone="info">
+            Waiting for {to} to confirm it arrived. It doesn’t count towards anyone’s balance until then.
+          </Notice>
+        </Gutter>
+      ) : null}
       {voidSettlement.isError ? (
         <Gutter>
           <Notice>{voidSettlement.error.message}</Notice>

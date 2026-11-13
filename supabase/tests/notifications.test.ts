@@ -196,15 +196,20 @@ describe('Removed and settled notifications', () => {
   it('a part payment does not say the group is settled', async () => {
     const { data: id } = await payer.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: payer.id, p_to_user_id: owner.id, p_amount_cents: 500 });
     expect(id).toBeTruthy();
+    await owner.client.rpc('respond_to_payment', { p_settlement_id: id, p_received: true });
     expect(await kinds(owner, 'group_settled')).toEqual([]);
   });
 
-  it('the payment that squares everyone tells everyone except whoever recorded it, once', async () => {
+  it('the payment that squares everyone tells everyone except whoever recorded or confirmed it, once', async () => {
     const { data: last } = await payer.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: payer.id, p_to_user_id: owner.id, p_amount_cents: 1000 });
-    // Correcting the last payment to the full amount settles the group.
-    expect((await payer.client.rpc('correct_settlement', { p_settlement_id: last, p_amount_cents: 1500 })).error).toBeNull();
-    expect(await kinds(owner, 'group_settled')).toHaveLength(1);
+    await owner.client.rpc('respond_to_payment', { p_settlement_id: last, p_received: true });
+    // Correcting the last payment to the full amount settles the group, once the owner confirms the new amount.
+    const { data: corrected, error } = await payer.client.rpc('correct_settlement', { p_settlement_id: last, p_amount_cents: 1500 });
+    expect(error).toBeNull();
+    expect(await kinds(third, 'group_settled')).toEqual([]);
+    expect((await owner.client.rpc('respond_to_payment', { p_settlement_id: corrected, p_received: true })).error).toBeNull();
     expect(await kinds(third, 'group_settled')).toHaveLength(1);
+    expect(await kinds(owner, 'group_settled')).toEqual([]);
     expect(await kinds(payer, 'group_settled')).toEqual([]);
   });
 

@@ -43,6 +43,8 @@ export type ActivityItem =
       amount: number;
       myEffect: number;
       involved: boolean;
+      /** Waiting for the receiver to confirm; doesn't count towards balances yet. */
+      pending?: boolean;
     };
 
 export function useActivity(groupId?: string): ActivityItem[] {
@@ -75,6 +77,18 @@ export function useActivity(groupId?: string): ActivityItem[] {
         amount: s.amount,
         myEffect: s.fromUserId === myId ? s.amount : s.toUserId === myId ? -s.amount : 0,
         involved: s.fromUserId === myId || s.toUserId === myId,
+      })),
+      ...data.pendingPayments.map((s) => ({
+        kind: 'settlement' as const,
+        id: s.id,
+        groupId: s.groupId,
+        at: s.occurredAt,
+        fromUserId: s.fromUserId,
+        toUserId: s.toUserId,
+        amount: s.amount,
+        myEffect: 0,
+        involved: s.fromUserId === myId || s.toUserId === myId,
+        pending: true,
       })),
     ];
     return items.filter((i) => !groupId || i.groupId === groupId).sort((a, b) => (a.at < b.at ? 1 : -1));

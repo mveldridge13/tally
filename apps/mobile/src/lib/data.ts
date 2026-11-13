@@ -77,6 +77,21 @@ export interface Settlement {
   note: string | null;
   /** Set when this payment corrects an earlier one (which is now voided). */
   replacesId: string | null;
+  /**
+   * 'pending': recorded by someone other than the receiver, waiting for the receiver to confirm.
+   * Pending payments don't count towards any balance; they're kept in `pendingPayments`.
+   */
+  status: 'recorded' | 'pending';
+}
+
+/** A payment someone says they made to you, waiting for you to confirm or say it never arrived. */
+export interface PaymentToConfirm {
+  id: string;
+  group: { id: string; name: string; icon: string | null; currency: string };
+  fromUserId: string;
+  fromName: string;
+  amount: Cents;
+  occurredAt: string;
 }
 
 export interface Profile {
@@ -105,7 +120,10 @@ export interface TallyData {
   groups: Group[];
   /** Expenses and payments you're allowed to see: everything in groups you own, only your own elsewhere. */
   expenses: Expense[];
+  /** Payments that count: confirmed, or recorded by the person who received them. */
   settlements: Settlement[];
+  /** Payments you can see that are waiting for the receiver to confirm. They don't count yet. */
+  pendingPayments: Settlement[];
   /** Balances per group, worked out on the server from the whole ledger (see my_group_summaries). */
   ledgers: Record<string, GroupLedger>;
 }
@@ -122,7 +140,7 @@ export interface GroupLedger {
   transfers: Transfer[];
 }
 
-const EMPTY: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], ledgers: {} };
+const EMPTY: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], pendingPayments: [], ledgers: {} };
 export const TALLY_KEY = ['tally'] as const;
 
 async function fetchTally(myId: string): Promise<TallyData> {
@@ -139,7 +157,10 @@ async function fetchTally(myId: string): Promise<TallyData> {
       )
       .is('archived_at', null)
       .is('expenses.deleted_at', null)
-      .eq('settlements.status', 'recorded')
+      // Everything but undone payments: pending ones are kept apart from the ones that count, and
+      // declined ones are skipped below. (Filtering this way also works before the database knows
+      // the newer statuses.)
+      .neq('settlements.status', 'voided')
       .order('created_at', { ascending: false }),
     supabase.from('profiles').select('id, name, currency, currency_chosen, created_at').eq('id', myId).maybeSingle(),
     // RLS returns only your own PayID and those of the owners of groups you're in.
@@ -151,7 +172,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
   if (groupsRes.error) throw groupsRes.error;
   if (ledgersRes.error) throw ledgersRes.error;
 
-  const data: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], ledgers: {} };
+  const data: TallyData = { me: null, payIds: {}, people: {}, groups: [], expenses: [], settlements: [], pendingPayments: [], ledgers: {} };
   for (const l of (ledgersRes.data ?? []) as unknown as ServerLedger[]) {
     data.ledgers[l.group_id] = {
       myBalance: l.my_balance,
@@ -214,7 +235,8 @@ async function fetchTally(myId: string): Promise<TallyData> {
       });
     }
     for (const s of g.settlements) {
-      data.settlements.push({
+      if (s.status !== 'recorded' && s.status !== 'pending') continue;
+      (s.status === 'pending' ? data.pendingPayments : data.settlements).push({
         id: s.id,
         groupId: g.id,
         fromUserId: s.from_user_id,
@@ -225,6 +247,7 @@ async function fetchTally(myId: string): Promise<TallyData> {
         createdAt: s.created_at,
         note: s.note,
         replacesId: s.replaces_id,
+        status: s.status === 'pending' ? 'pending' : 'recorded',
       });
     }
   }
@@ -546,7 +569,45 @@ export function useSyncDeviceCurrency() {
   }, [me, myId, qc]);
 }
 
-/** Undo a payment recorded by mistake. It's marked voided (kept for history) and balances update. */
+/** Payments someone says they made to you that you haven't answered yet (Home shows them). */
+export function usePaymentsToConfirm() {
+  const myId = useMyId();
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'to-confirm', myId],
+    queryFn: async (): Promise<PaymentToConfirm[]> => {
+      const { data, error } = await supabase.rpc('payments_to_confirm');
+      if (error) throw error;
+      return data.map((p) => ({
+        id: p.id,
+        group: { id: p.group_id, name: p.group_name, icon: p.group_icon, currency: p.group_currency },
+        fromUserId: p.from_user_id,
+        fromName: p.from_name,
+        amount: p.amount_cents,
+        occurredAt: p.occurred_at,
+      }));
+    },
+    enabled: !!myId,
+  });
+  return { ...query, data: query.data ?? [] };
+}
+
+/** The receiver answers a pending payment: it arrived (it counts now) or it didn't (it's dropped). */
+export function useRespondToPayment() {
+  return useInvalidating(async (input: { settlementId: string; received: boolean }) => {
+    const { error } = await supabase.rpc('respond_to_payment', { p_settlement_id: input.settlementId, p_received: input.received });
+    if (error) throw error;
+  });
+}
+
+/** The payer nudges the receiver to confirm a pending payment (once a day). */
+export function useRemindToConfirm() {
+  return useInvalidating(async (settlementId: string) => {
+    const { error } = await supabase.rpc('remind_to_confirm', { p_settlement_id: settlementId });
+    if (error) throw error;
+  });
+}
+
+/** Undo a payment recorded by mistake (or cancel one still waiting to be confirmed). It's marked voided (kept for history) and balances update. */
 export function useVoidSettlement() {
   return useInvalidating(async (settlementId: string) => {
     const { error } = await supabase.rpc('void_settlement', { p_settlement_id: settlementId });
@@ -673,7 +734,20 @@ export async function createInvite(groupId: string, guestId?: string): Promise<s
 
 export interface AppNotification {
   id: string;
-  kind: 'added_to_group' | 'settle_reminder' | 'made_co_owner' | 'removed_co_owner' | 'removed_from_group' | 'group_settled';
+  kind:
+    | 'added_to_group'
+    | 'settle_reminder'
+    | 'made_co_owner'
+    | 'removed_co_owner'
+    | 'removed_from_group'
+    | 'group_settled'
+    | 'payment_to_confirm'
+    | 'payment_confirmed'
+    | 'payment_declined'
+    | 'confirm_reminder';
+  /** Payment notifications: the payment, and where it stands now (pending, recorded, declined, voided). */
+  settlementId: string | null;
+  settlementStatus: string | null;
   group: { id: string; name: string; icon: string | null; currency: string };
   actorName: string;
   /** settle_reminder: what you owed when reminded, in the group's currency. */
@@ -698,6 +772,8 @@ export function useNotifications() {
         amount: n.amount_cents,
         at: n.created_at,
         read: n.read_at !== null,
+        settlementId: n.settlement_id,
+        settlementStatus: n.settlement_status,
       }));
     },
     enabled: !!myId,

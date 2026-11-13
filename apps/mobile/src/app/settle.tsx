@@ -102,6 +102,11 @@ export default function SettleScreen() {
   const over = valid && suggested > 0 && cents > suggested;
   const partial = valid && suggested > 0 && cents < suggested;
   const unchanged = isEdit && editing && cents === editing.amount && note.trim() === (editing.note ?? '');
+  // A payment counts straight away only when the receiver records it, or the receiver is a guest
+  // (no account to confirm with). Otherwise it waits for the receiver to confirm (the database decides;
+  // this mirrors it for the wording).
+  const needsConfirm = to !== myId && !data.people[to]?.isGuest;
+  const receiver = name(to);
 
   const title = isEdit
     ? 'Correct payment'
@@ -117,7 +122,10 @@ export default function SettleScreen() {
       // The corrected payment gets a new id, so go back past the old payment's details screen.
       correctSettlement.mutate(
         { settlementId: editing.id, amount: cents, note },
-        { onSuccess: (newId) => router.replace({ pathname: '/payment/[id]', params: { id: newId } }) },
+        {
+          // A correction that needs confirming is pending, so it has no details screen yet: go back.
+          onSuccess: (newId) => (needsConfirm ? router.back() : router.replace({ pathname: '/payment/[id]', params: { id: newId } })),
+        },
       );
     } else {
       recordSettlement.mutate(
@@ -126,7 +134,8 @@ export default function SettleScreen() {
           onSuccess: () => {
             buzz.success();
             setPaid(cents);
-            setConfetti((n) => n + 1);
+            // Confetti once it actually counts; a payment waiting for confirmation gets a calmer screen.
+            if (!needsConfirm) setConfetti((n) => n + 1);
           },
         },
       );
@@ -134,6 +143,36 @@ export default function SettleScreen() {
   }
 
   // Done: the celebration.
+  if (paid != null && needsConfirm) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, paddingTop: insets.top + space.xl, gap: space.md }}>
+          <Animated.View
+            entering={ZoomIn.springify().damping(12)}
+            style={{ width: 112, height: 112, borderRadius: 56, backgroundColor: c.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 52 }}>⏳</Text>
+          </Animated.View>
+          <Animated.View entering={ZoomIn.delay(120).springify().damping(14)}>
+            <Text variant="title" style={{ textAlign: 'center', fontSize: 28, lineHeight: 34 }}>
+              Sent to {receiver} to confirm
+            </Text>
+          </Animated.View>
+          <Text muted style={{ textAlign: 'center' }}>
+            {money(paid)} · {group.icon ? `${group.icon} ` : ''}
+            {group.name}
+          </Text>
+          <Text variant="caption" muted style={{ textAlign: 'center' }}>
+            It counts once {receiver} confirms it arrived. We’ve let them know.
+          </Text>
+        </View>
+        <View style={{ padding: space.lg, paddingBottom: insets.bottom + space.lg }}>
+          <Button label="Done" onPress={() => router.back()} />
+        </View>
+      </View>
+    );
+  }
+
   if (paid != null) {
     const square = suggested > 0 && paid >= suggested;
     const other = from === myId ? toName : to === myId ? fromName : null;
@@ -294,7 +333,9 @@ export default function SettleScreen() {
           />
         )}
         <Text variant="caption" muted style={{ textAlign: 'center' }}>
-          Tally never moves money. This just records it.
+          {needsConfirm
+            ? `Tally never moves money. ${receiver} will be asked to confirm it arrived.`
+            : 'Tally never moves money. This just records it.'}
         </Text>
       </Gutter>
     </HeroScreen>

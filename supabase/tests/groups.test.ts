@@ -120,7 +120,9 @@ describe('Membership: leave, remove, transfer ownership', () => {
     expect((await sam.client.rpc('remove_member', { p_group_id: groupId, p_user_id: owner.id })).error?.message).toMatch(/Only the group owner/);
     expect((await owner.client.rpc('remove_member', { p_group_id: groupId, p_user_id: sam.id })).error?.message).toMatch(/settle up/);
 
-    await sam.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: sam.id, p_to_user_id: owner.id, p_amount_cents: 1500 });
+    const { data: paid } = await sam.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: sam.id, p_to_user_id: owner.id, p_amount_cents: 1500 });
+    // Sam recorded it, so it counts once the owner confirms it arrived.
+    await owner.client.rpc('respond_to_payment', { p_settlement_id: paid, p_received: true });
     expect((await owner.client.rpc('remove_member', { p_group_id: groupId, p_user_id: sam.id })).error).toBeNull();
     expect((await sam.client.from('groups').select('id').eq('id', groupId)).data).toEqual([]);
   });

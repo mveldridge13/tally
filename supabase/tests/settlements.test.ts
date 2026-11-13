@@ -49,6 +49,8 @@ describe('Correcting a payment', () => {
       p_group_id: groupId, p_from_user_id: b.id, p_to_user_id: a.id, p_amount_cents: 1500, p_note: 'Bank transfer',
     });
     paymentId = sid;
+    // B recorded it, so it counts once A confirms it arrived.
+    await a.client.rpc('respond_to_payment', { p_settlement_id: sid, p_received: true });
   });
 
   it('records the note with a new payment', async () => {

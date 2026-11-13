@@ -59,6 +59,8 @@ describe('Member privacy', () => {
     // Cara paid Alice back 5.00.
     const { data: p } = await cara.client.rpc('record_settlement', { p_group_id: groupId, p_from_user_id: cara.id, p_to_user_id: alice.id, p_amount_cents: 500 });
     carasPaymentToAlice = p;
+    // Cara recorded it, so it counts once Alice confirms it arrived.
+    await alice.client.rpc('respond_to_payment', { p_settlement_id: p, p_received: true });
   });
 
   it('the owner reads every expense and payment', async () => {

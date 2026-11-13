@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { Gutter, HeroScreen } from '@/components/dashboard';
+import { ConfirmButtons } from '@/components/confirm-payment';
 import { GroupIcon } from '@/components/friendly';
 import { Card, Divider, Notice, Text } from '@/components/ui';
 import { useMarkNotificationsRead, useNotifications, type AppNotification } from '@/lib/data';
@@ -18,6 +19,7 @@ function Row({ n }: { n: AppNotification }) {
   const myId = useMyId();
   const summaries = useGroupSummaries();
   const reminder = n.kind === 'settle_reminder';
+  const asksToConfirm = n.kind === 'payment_to_confirm' || n.kind === 'confirm_reminder';
 
   // Notifications stay after you leave or are removed from a group, but there's nothing to open.
   const inGroup = summaries.some((s) => s.group.id === n.group.id);
@@ -70,6 +72,21 @@ function Row({ n }: { n: AppNotification }) {
           <Text variant="body">
             {bold(n.group.name)} is all settled up · Everyone’s square
           </Text>
+        ) : n.kind === 'payment_to_confirm' || n.kind === 'confirm_reminder' ? (
+          <Text variant="body">
+            {bold(n.actorName)} {n.kind === 'confirm_reminder' ? 'is waiting for you to confirm' : 'says they paid you'}{' '}
+            {bold(formatMoney(n.amount ?? 0, n.group.currency))} in {bold(n.group.name)}
+            {n.settlementStatus === 'pending' ? ' · Did it arrive?' : ''}
+          </Text>
+        ) : n.kind === 'payment_confirmed' ? (
+          <Text variant="body">
+            {bold(n.actorName)} confirmed your {bold(formatMoney(n.amount ?? 0, n.group.currency))} payment in {bold(n.group.name)}
+          </Text>
+        ) : n.kind === 'payment_declined' ? (
+          <Text variant="body">
+            {bold(n.actorName)} says your {bold(formatMoney(n.amount ?? 0, n.group.currency))} payment in {bold(n.group.name)} hasn’t
+            arrived · It’s been removed, so check with them
+          </Text>
         ) : n.kind === 'removed_co_owner' ? (
           <Text variant="body">
             {bold(n.actorName)} removed you as co-owner of {bold(n.group.name)} · You’ll now see only items you added
@@ -81,7 +98,16 @@ function Row({ n }: { n: AppNotification }) {
         )}
         <Text variant="caption" muted>
           {relativeTime(n.at)}
+          {asksToConfirm && n.settlementStatus !== 'pending'
+            ? ` · ${n.settlementStatus === 'recorded' ? 'You confirmed it' : n.settlementStatus === 'declined' ? 'You said it hadn’t arrived' : 'Cancelled'}`
+            : ''}
         </Text>
+        {/* Still waiting for you: answer right here. */}
+        {asksToConfirm && n.settlementStatus === 'pending' && n.settlementId ? (
+          <View style={{ marginTop: space.sm }}>
+            <ConfirmButtons settlementId={n.settlementId} fromName={n.actorName} amount={n.amount ?? 0} currency={n.group.currency} />
+          </View>
+        ) : null}
       </View>
       {/* Dot for ones that were new when you opened the screen. */}
       {!n.read ? <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: brand.slash }} /> : null}

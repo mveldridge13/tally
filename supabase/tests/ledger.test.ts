@@ -109,10 +109,12 @@ describe('Tally ledger (Supabase)', () => {
     const before = Object.fromEntries(data.map((r: { user_id: string; balance_cents: number }) => [r.user_id, r.balance_cents]));
     expect(before).toEqual({ [alice.id]: 5000, [bob.id]: -5000 });
 
-    const { error } = await bob.client.rpc('record_settlement', {
+    const { data: paid, error } = await bob.client.rpc('record_settlement', {
       p_group_id: groupId, p_from_user_id: bob.id, p_to_user_id: alice.id, p_amount_cents: 5000,
     });
     expect(error).toBeNull();
+    // Bob recorded it, so it counts once Alice confirms it arrived.
+    expect((await alice.client.rpc('respond_to_payment', { p_settlement_id: paid, p_received: true })).error).toBeNull();
 
     ({ data } = await alice.client.rpc('group_balances', { p_group_id: groupId }));
     for (const row of data) expect(row.balance_cents).toBe(0);

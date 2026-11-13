@@ -162,9 +162,9 @@ export function Bubble({
     right = share > 0 ? { big: money(share), small: 'your share' } : { big: '—', small: 'not in it' };
   } else {
     const to = item.toUserId === myId ? 'you' : firstName(name(item.toUserId));
-    emoji = '💸';
+    emoji = item.pending ? '⏳' : '💸';
     title = `${mine ? 'You' : firstName(name(item.fromUserId))} paid ${to} back`;
-    line = 'Settled up';
+    line = item.pending ? `Waiting for ${to === 'you' ? 'you' : to} to confirm` : 'Settled up';
     right = { big: money(item.amount) };
   }
   if (showGroup && group) line = `${line} · ${group.icon ? `${group.icon} ` : ''}${group.name}`;
@@ -187,8 +187,10 @@ export function Bubble({
           borderRadius: 20,
           borderBottomLeftRadius: mine ? 20 : 6,
           borderBottomRightRadius: mine ? 6 : 20,
-          backgroundColor: item.kind === 'settlement' ? c.warm : mine ? c.surfaceAlt : c.surface,
-          borderWidth: item.kind === 'expense' && !mine ? 1 : 0,
+          backgroundColor: item.kind === 'settlement' ? (item.pending ? c.surface : c.warm) : mine ? c.surfaceAlt : c.surface,
+          // A payment waiting for confirmation is drawn dashed: it doesn't count yet.
+          borderWidth: (item.kind === 'expense' && !mine) || (item.kind === 'settlement' && item.pending) ? 1 : 0,
+          borderStyle: item.kind === 'settlement' && item.pending ? 'dashed' : 'solid',
           borderColor: c.border,
         }}>
         <Text style={{ fontSize: 26 }}>{emoji}</Text>

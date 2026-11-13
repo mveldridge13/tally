@@ -81,8 +81,17 @@ export function YouCard({
   const payBack = () =>
     router.push({
       pathname: '/settle',
-      params: { groupId: group.id, from: iOwe ? myId : other, to: iOwe ? other : myId, amount: String(amount) },
+      // Less anything already sent and waiting to be confirmed.
+      params: { groupId: group.id, from: iOwe ? myId : other, to: iOwe ? other : myId, amount: String(amount - sent) },
     });
+
+  // You've already recorded paying them back and it's waiting for them to confirm: say so
+  // instead of offering Pay back again (it doesn't count towards the balance until confirmed).
+  const sent = iOwe
+    ? data.pendingPayments
+        .filter((p) => p.groupId === group.id && p.fromUserId === myId && p.toUserId === other)
+        .reduce((sum, p) => sum + p.amount, 0)
+    : 0;
 
   return (
     <Bouncy
@@ -112,9 +121,14 @@ export function YouCard({
             {group.name}
           </Text>
         ) : null}
+        {sent > 0 ? (
+          <Text variant="caption" muted numberOfLines={2}>
+            ⏳ {formatMoney(sent, group.currency)} sent, waiting for {who} to confirm
+          </Text>
+        ) : null}
       </View>
       {iOwe ? (
-        <Pill label="Pay back" solid onPress={payBack} />
+        sent >= amount ? null : <Pill label={sent > 0 ? 'Pay the rest' : 'Pay back'} solid onPress={payBack} />
       ) : canRemind ? (
         nudged ? (
           <Text variant="label" muted>

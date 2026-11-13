@@ -362,6 +362,7 @@ export type Database = {
           id: string;
           kind: string;
           read_at: string | null;
+          settlement_id: string | null;
           user_id: string;
         };
         ComputedFields: never;
@@ -530,6 +531,7 @@ export type Database = {
           note: string | null;
           occurred_at: string;
           replaces_id: string | null;
+          responded_at: string | null;
           status: Database['public']['Enums']['settlement_status'];
           to_user_id: string;
         };
@@ -686,6 +688,23 @@ export type Database = {
           id: string;
           kind: string;
           read_at: string;
+          settlement_id: string | null;
+          settlement_status: string | null;
+        }[];
+      };
+      payments_to_confirm: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          amount_cents: number;
+          created_at: string;
+          from_name: string;
+          from_user_id: string;
+          group_currency: string;
+          group_icon: string | null;
+          group_id: string;
+          group_name: string;
+          id: string;
+          occurred_at: string;
         }[];
       };
       owns_group_with: { Args: { p_user_id: string }; Returns: boolean };
@@ -700,7 +719,9 @@ export type Database = {
         };
         Returns: string;
       };
+      remind_to_confirm: { Args: { p_settlement_id: string }; Returns: undefined };
       remind_to_settle: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
+      respond_to_payment: { Args: { p_received: boolean; p_settlement_id: string }; Returns: undefined };
       remove_member: { Args: { p_group_id: string; p_user_id: string }; Returns: undefined };
       remove_payid: { Args: Record<PropertyKey, never>; Returns: undefined };
       require_user: { Args: Record<PropertyKey, never>; Returns: string };
@@ -745,7 +766,7 @@ export type Database = {
     };
     Enums: {
       group_role: 'owner' | 'admin' | 'member';
-      settlement_status: 'recorded' | 'voided';
+      settlement_status: 'recorded' | 'voided' | 'pending' | 'declined';
       split_method: 'equal' | 'exact' | 'percentage' | 'shares' | 'items' | 'adjustment';
     };
     CompositeTypes: {
@@ -857,7 +878,7 @@ export const Constants = {
   public: {
     Enums: {
       group_role: ['owner', 'admin', 'member'],
-      settlement_status: ['recorded', 'voided'],
+      settlement_status: ['recorded', 'voided', 'pending', 'declined'],
       split_method: ['equal', 'exact', 'percentage', 'shares', 'items', 'adjustment'],
     },
   },
