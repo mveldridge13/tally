@@ -1110,6 +1110,7 @@ export function useSyncTimeZone() {
   useEffect(() => {
     if (!myId) return;
     const tz = deviceTimeZone();
-    if (tz) void callRpc('set_my_time_zone', { p_time_zone: tz }).catch(() => {});
+    // Database requests have .then but no .catch: wrap in a real promise before ignoring failures.
+    if (tz) void Promise.resolve(callRpc('set_my_time_zone', { p_time_zone: tz })).catch(() => {});
   }, [myId]);
 }
