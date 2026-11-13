@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TallyMark } from '@/components/brand';
 import { Text } from '@/components/ui';
-import { useSyncDeviceCurrency } from '@/lib/data';
+import { useSyncDeviceCurrency, useSyncTimeZone } from '@/lib/data';
 import { takePendingInvite } from '@/lib/pending-invite';
 import { NAV_RAIL_SIDE, NAV_RAIL_WIDTH, useWidthClass } from '@/lib/layout';
 import { radius, space, useColors } from '@/theme';
@@ -65,6 +65,7 @@ export default function TabsLayout() {
   const c = useColors();
   const insets = useSafeAreaInsets();
   useSyncDeviceCurrency();
+  useSyncTimeZone();
   // An invite opened or pasted before signing in: join it now, once.
   useEffect(() => {
     const token = takePendingInvite();

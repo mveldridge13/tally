@@ -192,6 +192,31 @@ describe('Recurring expenses (Supabase)', () => {
     expect(other.error?.message).toMatch(/isn.t in this group/);
   });
 
+  it('moving the next date to today adds it straight away, without waiting for the job', async () => {
+    const { data: id } = await create(bob, { p_description: 'Phone', p_start_date: plusDays(5) });
+    const { error } = await bob.client.rpc('update_recurring', {
+      p_id: id, p_description: 'Phone', p_payer_id: bob.id, p_split_method: 'equal',
+      p_split_input: { method: 'equal', participants: [alice.id, bob.id, cara.id] }, p_variable: false,
+      p_amount_cents: 90000, p_splits: splits3(90000), p_items: null, p_frequency: 'monthly',
+      p_end_date: null, p_remaining: null, p_heads_up_days: 1, p_next_date: today(),
+    });
+    expect(error).toBeNull();
+    expect((await alice.client.from('expenses').select('id').eq('recurring_id', id)).data).toHaveLength(1);
+    const { data: row } = await bob.client.from('recurring_expenses').select('next_date').eq('id', id).single();
+    expect(row!.next_date > today()).toBe(true);
+  });
+
+  it('works out "today" in the time zone of whoever set it up', async () => {
+    // Kiritimati is UTC+14, so its today is often UTC's tomorrow.
+    expect((await bob.client.rpc('set_my_time_zone', { p_time_zone: 'Pacific/Kiritimati' })).error).toBeNull();
+    expect((await bob.client.rpc('set_my_time_zone', { p_time_zone: 'Not/AZone' })).error?.message).toMatch(/Unknown time zone/);
+    const kiritimatiToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Kiritimati' }).format(new Date());
+    const { data: id } = await create(bob, { p_description: 'Island rent', p_start_date: kiritimatiToday });
+    // Due today where Bob is, so it's added at once.
+    expect((await alice.client.from('expenses').select('id').eq('recurring_id', id)).data).toHaveLength(1);
+    await bob.client.rpc('set_my_time_zone', { p_time_zone: 'UTC' });
+  });
+
   it('ends after the number of times chosen', async () => {
     const { data: id } = await create(bob, { p_description: 'Course', p_remaining: 1 });
     await runJob();

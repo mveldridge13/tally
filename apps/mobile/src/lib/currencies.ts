@@ -33,3 +33,22 @@ export function deviceCurrency(): Currency | null {
   }
   return null;
 }
+
+/** The phone's time zone, e.g. "Australia/Sydney", or null if it can't be read. */
+export function deviceTimeZone(): string | null {
+  if (requireOptionalNativeModule('ExpoLocalization')) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getCalendars } = require('expo-localization') as typeof Localization;
+      const tz = getCalendars()[0]?.timeZone;
+      if (tz) return tz;
+    } catch {
+      // Fall back to Intl below.
+    }
+  }
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}

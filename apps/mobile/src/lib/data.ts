@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
 import { useMyId } from './auth';
-import { deviceCurrency } from './currencies';
+import { deviceCurrency, deviceTimeZone } from './currencies';
 import { supabase } from './supabase';
 
 /**
@@ -1099,4 +1099,17 @@ export function usePeriodPayments(expenseIds: string[]) {
     },
   });
   return query.data ?? [];
+}
+
+/**
+ * Tell the database this phone's time zone, once per session, so recurring expenses you set up
+ * turn over at your midnight. Quietly does nothing if it can't (e.g. an older database).
+ */
+export function useSyncTimeZone() {
+  const myId = useMyId();
+  useEffect(() => {
+    if (!myId) return;
+    const tz = deviceTimeZone();
+    if (tz) void callRpc('set_my_time_zone', { p_time_zone: tz }).catch(() => {});
+  }, [myId]);
 }
