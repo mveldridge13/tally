@@ -1,6 +1,7 @@
 import {
   centsToDecimalString,
   computeSplit,
+  adjustmentsTotal,
   FULL_PERCENT_BPS,
   formatMoney,
   itemsSubtotal,
@@ -42,7 +43,15 @@ const METHODS: { id: SplitMethod; label: string; hint: string }[] = [
     label: 'Items',
     hint: 'Add each item and tap who had it. Tax or tip on top of the items is shared in proportion to what each person had.',
   },
+  {
+    id: 'adjustment',
+    label: 'Adjust',
+    hint: 'Split equally, then add anything extra someone had. Tap ± for someone who should pay less.',
+  },
 ];
+
+/** Flip an adjustment typed on the form between paying more ("15") and paying less ("-15"). */
+const flipSign = (v: string) => (v.startsWith('-') ? v.slice(1) : `-${v}`);
 
 /** An item as typed on the form: the price stays text until it's parsed. */
 interface ItemRow {
@@ -81,6 +90,7 @@ function initialFromExpense(expense: Expense | undefined, memberIds: string[]) {
     if (expense.method === 'exact') values[id] = centsToDecimalString(s.amount);
     if (expense.method === 'percentage' && s.weight != null) values[id] = centsToDecimalString(s.weight).replace(/\.00$/, '');
     if (expense.method === 'shares' && s.weight != null) values[id] = String(s.weight);
+    if (expense.method === 'adjustment' && s.weight) values[id] = centsToDecimalString(s.weight);
   }
   const items: ItemRow[] = expense.items?.map((i) => ({
     key: nextItemKey++,
@@ -119,13 +129,14 @@ function PersonPill({ label, selected, onPress }: { label: string; selected: boo
   );
 }
 
-/** Four-way segmented control for the split method. */
+/** Segmented control for the split method: two rows of three so every label stays readable. */
 function Segmented({ value, onChange }: { value: SplitMethod; onChange: (m: SplitMethod) => void }) {
   const c = useColors();
   return (
     <View
       style={{
         flexDirection: 'row',
+        flexWrap: 'wrap',
         backgroundColor: c.surfaceAlt,
         borderRadius: radius.md,
         padding: 4,
@@ -140,7 +151,8 @@ function Segmented({ value, onChange }: { value: SplitMethod; onChange: (m: Spli
             accessibilityState={{ selected }}
             onPress={() => onChange(m.id)}
             style={{
-              flex: 1,
+              flexGrow: 1,
+              flexBasis: '30%',
               alignItems: 'center',
               paddingVertical: space.sm + 2,
               borderRadius: radius.sm + 2,
@@ -315,6 +327,14 @@ export default function ExpenseFormScreen() {
               userIds: members.filter((id) => item.userIds.includes(id)),
             })),
           };
+        case 'adjustment':
+          return {
+            method,
+            shares: participantIds.map((userId) => ({
+              userId,
+              adjustment: parseToCents((values[userId] || '0').replace(/^\+/, '')),
+            })),
+          };
       }
     } catch {
       return 'Check the numbers you entered.';
@@ -354,6 +374,10 @@ export default function ExpenseFormScreen() {
       const over = itemsSubtotal(splitInput.items) - amount;
       return over > 0 ? `Items come to ${formatMoney(over, group.currency)} more than the total` : null;
     }
+    if (splitInput.method === 'adjustment' && Number.isFinite(amount) && amount > 0) {
+      const over = adjustmentsTotal(splitInput.shares) - amount;
+      return over > 0 ? `Adjustments come to ${formatMoney(over, group.currency)} more than the total` : null;
+    }
     return null;
   }, [splitInput, amount, group]);
 
@@ -361,6 +385,12 @@ export default function ExpenseFormScreen() {
   const itemTotals =
     typeof splitInput !== 'string' && splitInput.method === 'items'
       ? { items: itemsSubtotal(splitInput.items), extra: Number.isFinite(amount) ? amount - itemsSubtotal(splitInput.items) : 0 }
+      : null;
+
+  /** For an adjusted split: what's left to share equally once the adjustments are taken off. */
+  const equalPart =
+    typeof splitInput !== 'string' && splitInput.method === 'adjustment' && Number.isFinite(amount) && amount > 0
+      ? amount - adjustmentsTotal(splitInput.shares)
       : null;
 
   const title = isEdit ? 'Edit expense' : 'New expense';
@@ -422,6 +452,7 @@ export default function ExpenseFormScreen() {
     percentage: 'by percentage',
     shares: 'by shares',
     items: 'by item',
+    adjustment: 'equally with adjustments',
   };
   const splitLine =
     method === 'equal' && preview.ok && group && n > 0
@@ -712,6 +743,12 @@ export default function ExpenseFormScreen() {
               ) : null}
             </View>
           ) : null}
+          {method === 'adjustment' && equalPart != null && equalPart >= 0 && group && participantIds.length > 0 ? (
+            <Text variant="caption" muted style={{ textAlign: 'center' }}>
+              {formatMoney(equalPart, group.currency)} split equally between {participantIds.length}, then each
+              adjustment added on
+            </Text>
+          ) : null}
           <Card style={{ paddingVertical: space.xs }}>
             {members.map((id, i) => {
               const on = method === 'items' ? items.some((item) => item.userIds.includes(id)) : isIncluded(id);
@@ -744,14 +781,32 @@ export default function ExpenseFormScreen() {
                           borderRadius: radius.sm,
                           paddingHorizontal: space.sm,
                         }}>
+                        {method === 'adjustment' ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`${name(id)} pays ${(values[id] ?? '').startsWith('-') ? 'less' : 'more'}. Switch`}
+                            onPress={() => setValues((s) => ({ ...s, [id]: flipSign(s[id] ?? '') }))}
+                            hitSlop={8}
+                            style={{ paddingRight: space.xs }}>
+                            <Text variant="label" color={c.primary}>
+                              {(values[id] ?? '').startsWith('-') ? '−' : '+'}
+                            </Text>
+                          </Pressable>
+                        ) : null}
                         <TextInput
-                          value={values[id] ?? ''}
-                          onChangeText={(v) => setValues((s) => ({ ...s, [id]: v }))}
+                          value={method === 'adjustment' ? (values[id] ?? '').replace(/^-/, '') : (values[id] ?? '')}
+                          onChangeText={(v) =>
+                            setValues((s) => ({
+                              ...s,
+                              // Keep an adjustment's sign when the number is retyped.
+                              [id]: method === 'adjustment' && (s[id] ?? '').startsWith('-') ? `-${v}` : v,
+                            }))
+                          }
                           placeholder={method === 'shares' ? '1' : '0'}
                           placeholderTextColor={c.textMuted}
                           keyboardType={method === 'shares' ? 'number-pad' : 'decimal-pad'}
                           selectionColor={c.focus}
-                          accessibilityLabel={`${name(id)} ${method === 'percentage' ? 'percentage' : method === 'shares' ? 'shares' : 'amount'}`}
+                          accessibilityLabel={`${name(id)} ${method === 'percentage' ? 'percentage' : method === 'shares' ? 'shares' : method === 'adjustment' ? 'adjustment' : 'amount'}`}
                           style={{ ...type.body, color: c.text, width: 64, textAlign: 'right', paddingVertical: space.sm }}
                         />
                         {method === 'percentage' ? <Text muted> %</Text> : null}

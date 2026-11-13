@@ -10,7 +10,8 @@ export type SplitInput =
   | { method: 'exact'; shares: { userId: UserId; amount: Cents }[] }
   | { method: 'percentage'; shares: { userId: UserId; basisPoints: number }[] }
   | { method: 'shares'; shares: { userId: UserId; units: number }[] }
-  | { method: 'items'; items: SplitItem[] };
+  | { method: 'items'; items: SplitItem[] }
+  | { method: 'adjustment'; shares: { userId: UserId; adjustment: Cents }[] };
 
 /**
  * One line of a bill (split by item). The price is shared equally by the people who had it.
@@ -37,7 +38,9 @@ export type SplitErrorCode =
   | 'PERCENT_SUM_MISMATCH'
   | 'ZERO_UNITS'
   | 'NO_ITEMS'
-  | 'ITEMS_EXCEED_TOTAL';
+  | 'ITEMS_EXCEED_TOTAL'
+  | 'ADJUSTMENTS_EXCEED_TOTAL'
+  | 'NEGATIVE_SHARE';
 
 export class SplitError extends Error {
   constructor(
@@ -131,7 +134,50 @@ export function computeSplit(total: Cents, input: SplitInput): SplitShare[] {
 
     case 'items':
       return splitByItems(total, input.items);
+
+    case 'adjustment':
+      return splitWithAdjustments(total, input.shares);
   }
+}
+
+/**
+ * Split equally, with adjustments. Each adjustment is taken off the total first (an extra the
+ * person had) or added back (something they skipped), the rest is split equally, then each
+ * person's adjustment is added to their equal part. A negative adjustment is a discount.
+ */
+export function splitWithAdjustments(
+  total: Cents,
+  shares: { userId: UserId; adjustment: Cents }[],
+): SplitShare[] {
+  const ids = uniqueIds(shares.map((s) => s.userId));
+  let adjustments = 0;
+  for (const s of shares) {
+    if (!Number.isSafeInteger(s.adjustment)) {
+      throw new SplitError('INVALID_SHARE', `Adjustment for ${s.userId} must be a whole number of cents`);
+    }
+    adjustments += s.adjustment;
+  }
+  const rest = total - adjustments;
+  if (rest < 0) {
+    throw new SplitError(
+      'ADJUSTMENTS_EXCEED_TOTAL',
+      `Adjustments add up to ${adjustments} but the expense total is ${total}`,
+    );
+  }
+  const equal = allocateByWeights(
+    rest,
+    ids.map((userId) => ({ userId, weight: 1 })),
+  );
+  const result = equal.map((e, i) => ({ userId: e.userId, amount: e.amount + shares[i]!.adjustment }));
+  if (result.some((r) => r.amount < 0)) {
+    throw new SplitError('NEGATIVE_SHARE', 'A discount can’t be more than that person’s share');
+  }
+  return result;
+}
+
+/** What the adjustments add up to: the part of the total that isn't split equally. */
+export function adjustmentsTotal(shares: { adjustment: Cents }[]): Cents {
+  return shares.reduce((sum, s) => sum + s.adjustment, 0);
 }
 
 /**

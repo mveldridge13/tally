@@ -35,6 +35,10 @@ export const splitInputSchema = z.discriminatedUnion('method', [
       )
       .min(1),
   }),
+  z.object({
+    method: z.literal('adjustment'),
+    shares: z.array(z.object({ userId: idSchema, adjustment: centsSchema })).min(1),
+  }),
 ]);
 
 export const createExpenseSchema = z.object({

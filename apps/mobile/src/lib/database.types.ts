@@ -746,7 +746,7 @@ export type Database = {
     Enums: {
       group_role: 'owner' | 'admin' | 'member';
       settlement_status: 'recorded' | 'voided';
-      split_method: 'equal' | 'exact' | 'percentage' | 'shares' | 'items';
+      split_method: 'equal' | 'exact' | 'percentage' | 'shares' | 'items' | 'adjustment';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -858,7 +858,7 @@ export const Constants = {
     Enums: {
       group_role: ['owner', 'admin', 'member'],
       settlement_status: ['recorded', 'voided'],
-      split_method: ['equal', 'exact', 'percentage', 'shares', 'items'],
+      split_method: ['equal', 'exact', 'percentage', 'shares', 'items', 'adjustment'],
     },
   },
 } as const;

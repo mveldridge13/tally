@@ -362,6 +362,7 @@ function toRpcSplits(amount: Cents, split: SplitInput) {
   const weights = new Map<string, number>();
   if (split.method === 'percentage') split.shares.forEach((s) => weights.set(s.userId, s.basisPoints));
   if (split.method === 'shares') split.shares.forEach((s) => weights.set(s.userId, s.units));
+  if (split.method === 'adjustment') split.shares.forEach((s) => weights.set(s.userId, s.adjustment));
   return shares.map((s) => ({ user_id: s.userId, amount_cents: s.amount, weight: weights.get(s.userId) ?? null }));
 }
 

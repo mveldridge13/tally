@@ -171,6 +171,73 @@ describe('computeSplit', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('splits equally after adjustments', () => {
+    // $90 dinner for three; a had an extra $15 cocktail. $75 split three ways, then +$15 for a.
+    expect(
+      computeSplit(9000, {
+        method: 'adjustment',
+        shares: [
+          { userId: 'a', adjustment: 1500 },
+          { userId: 'b', adjustment: 0 },
+          { userId: 'c', adjustment: 0 },
+        ],
+      }),
+    ).toEqual([
+      { userId: 'a', amount: 4000 },
+      { userId: 'b', amount: 2500 },
+      { userId: 'c', amount: 2500 },
+    ]);
+  });
+
+  it('takes a negative adjustment off that person and shares it among the rest', () => {
+    // $100 for two; b skipped $10 of it. The $110 is split $55 each, then b gets $10 off.
+    const split = computeSplit(10_000, {
+      method: 'adjustment',
+      shares: [
+        { userId: 'a', adjustment: 0 },
+        { userId: 'b', adjustment: -1000 },
+      ],
+    });
+    expect(split).toEqual([
+      { userId: 'a', amount: 5500 },
+      { userId: 'b', amount: 4500 },
+    ]);
+  });
+
+  it('keeps an adjusted split adding up to the total, cent for cent', () => {
+    const split = computeSplit(1000, {
+      method: 'adjustment',
+      shares: [
+        { userId: 'a', adjustment: 1 },
+        { userId: 'b', adjustment: 0 },
+        { userId: 'c', adjustment: 0 },
+      ],
+    });
+    expect(sum(split)).toBe(1000);
+    expect(split.map((s) => s.amount)).toEqual([334, 333, 333]);
+  });
+
+  it('rejects adjustments bigger than the total or a discount bigger than a share', () => {
+    expect(() =>
+      computeSplit(1000, { method: 'adjustment', shares: [{ userId: 'a', adjustment: 1500 }, { userId: 'b', adjustment: 0 }] }),
+    ).toThrow(expect.objectContaining({ code: 'ADJUSTMENTS_EXCEED_TOTAL' }));
+    expect(() =>
+      computeSplit(1000, { method: 'adjustment', shares: [{ userId: 'a', adjustment: -2000 }, { userId: 'b', adjustment: 0 }] }),
+    ).toThrow(expect.objectContaining({ code: 'NEGATIVE_SHARE' }));
+  });
+
+  it('accepts an adjustment split in the expense schema', () => {
+    const parsed = createExpenseSchema.safeParse({
+      groupId: 'g',
+      description: 'Dinner',
+      amount: 9000,
+      payerId: 'a',
+      date: new Date().toISOString(),
+      split: { method: 'adjustment', shares: [{ userId: 'a', adjustment: 1500 }, { userId: 'b', adjustment: -500 }] },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it('rejects bad input', () => {
     expect(() => computeSplit(0, { method: 'equal', participants: ['a'] })).toThrow(SplitError);
     expect(() => computeSplit(10.5, { method: 'equal', participants: ['a'] })).toThrow();

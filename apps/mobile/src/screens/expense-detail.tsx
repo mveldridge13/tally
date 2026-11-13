@@ -15,6 +15,7 @@ const METHOD_LABEL = {
   percentage: 'Split by percentage',
   shares: 'Split by shares',
   items: 'Split by item',
+  adjustment: 'Split equally, with adjustments',
 } as const;
 
 function formatDateTime(iso: string) {
@@ -79,6 +80,9 @@ export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; em
     if (weight == null) return null;
     if (expense.method === 'percentage') return `${centsToDecimalString(weight).replace(/\.00$/, '')}%`;
     if (expense.method === 'shares') return `${weight} ${weight === 1 ? 'share' : 'shares'}`;
+    if (expense.method === 'adjustment' && weight !== 0) {
+      return `${weight > 0 ? '+' : '−'}${money(Math.abs(weight))}`;
+    }
     return null;
   };
 
