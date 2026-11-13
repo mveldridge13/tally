@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Pressable, Switch, View } from 'react-native';
 
+import { Sheet } from '@/components/friendly';
 import { Bouncy, buzz, expenseEmoji } from '@/components/fun';
 import { Button, Card, Chip, Divider, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
@@ -111,12 +112,6 @@ export const FREQUENCY_PER: Record<Frequency, string> = {
 
 export const headsUpLabel = (days: number) =>
   days === 0 ? 'Same day' : days === 1 ? '1 day before' : days === 7 ? '1 week before' : `${days} days before`;
-
-function tomorrowDate() {
-  const d = toDate(todayDate());
-  d.setDate(d.getDate() + 1);
-  return iso(d);
-}
 
 /**
  * A month calendar for picking a date: ‹ › to change month, days before `min` greyed out,
@@ -287,13 +282,12 @@ export function RecurringLine({ form, onPress }: { form: RecurringForm; onPress:
   );
 }
 
+/** How often a new one can recur. (Quarterly and yearly still work for ones already set up.) */
 const FREQ_TILES: { id: Frequency | 'once'; label: string }[] = [
   { id: 'once', label: 'Once' },
   { id: 'weekly', label: 'Weekly' },
   { id: 'fortnightly', label: 'Fortnightly' },
   { id: 'monthly', label: 'Monthly' },
-  { id: 'quarterly', label: 'Quarterly' },
-  { id: 'yearly', label: 'Yearly' },
 ];
 
 /** What goes inside the Recurring panel (the Sheet and its Done button come from the screen). */
@@ -311,6 +305,14 @@ export function RecurringPanel({
 }) {
   const c = useColors();
   const [open, setOpen] = useState<'start' | 'ends' | 'heads' | null>(null);
+  // The calendar opens in its own panel on top, for the start (or next) date or the end date.
+  const [picking, setPicking] = useState<'start' | 'end' | null>(null);
+  const pickStart = (d: string) =>
+    set({
+      start: d,
+      endDate: form.endDate && form.endDate < d ? null : form.endDate,
+      ends: form.ends === 'date' && form.endDate && form.endDate < d ? 'never' : form.ends,
+    });
   const set = (patch: Partial<RecurringForm>) => onChange({ ...form, ...patch });
   const ends =
     form.ends === 'never' ? 'Never' : form.ends === 'date' && form.endDate ? shortDate(form.endDate) : `After ${form.times} times`;
@@ -344,11 +346,11 @@ export function RecurringPanel({
         <Text style={{ fontSize: 15, lineHeight: 21, color: brand.onCoral }}>{summary}</Text>
       </View>
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
         {FREQ_TILES.filter((t) => !(editingSchedule && t.id === 'once')).map((t) => {
           const on = t.id === 'once' ? !form.on : form.on && form.frequency === t.id;
           return (
-            <View key={t.id} style={{ width: '31.5%' }}>
+            <View key={t.id} style={{ flex: 1 }}>
               <Bouncy
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
@@ -364,7 +366,12 @@ export function RecurringPanel({
                   borderColor: on ? c.primary : c.border,
                   backgroundColor: on ? c.primary : c.surface,
                 }}>
-                <Text variant="label" color={on ? c.onPrimary : c.text} style={{ fontSize: 15, fontWeight: '700' }}>
+                <Text
+                  variant="label"
+                  color={on ? c.onPrimary : c.text}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  style={{ fontSize: 15, fontWeight: '700', paddingHorizontal: 4 }}>
                   {t.label}
                 </Text>
               </Bouncy>
@@ -375,22 +382,23 @@ export function RecurringPanel({
 
       {form.on ? (
         <Card style={{ paddingVertical: 0 }}>
-          {row(
-                'start',
-                editingSchedule ? 'Next one' : 'Starts',
-                form.start === todayDate() ? 'Today' : shortDate(form.start),
-                <>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
-                    <Chip label="Today" selected={form.start === todayDate()} onPress={() => set({ start: todayDate() })} />
-                    <Chip label="Tomorrow" selected={form.start === tomorrowDate()} onPress={() => set({ start: tomorrowDate() })} />
-                  </View>
-                  <Calendar
-                    value={form.start}
-                    min={todayDate()}
-                    onChange={(d) => set({ start: d, endDate: form.endDate && form.endDate < d ? null : form.endDate, ends: form.ends === 'date' && form.endDate && form.endDate < d ? 'never' : form.ends })}
-                  />
-                </>,
-              )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${editingSchedule ? 'Next one' : 'Starts'}: ${form.start === todayDate() ? 'Today' : shortDate(form.start)}. Change`}
+            onPress={() => {
+              buzz.tap();
+              setOpen(null);
+              setPicking('start');
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md + 2 }}>
+            <Text variant="heading" style={{ flex: 1 }}>
+              {editingSchedule ? 'Next one' : 'Starts'}
+            </Text>
+            <Text variant="heading" color={c.primary} style={{ fontWeight: '700' }}>
+              {form.start === todayDate() ? 'Today' : shortDate(form.start)}
+            </Text>
+            <MaterialIcons name="calendar-today" size={20} color={c.textMuted} />
+          </Pressable>
           <Divider />
           {row(
             'ends',
@@ -402,12 +410,19 @@ export function RecurringPanel({
                 <Chip
                   label="On a date"
                   selected={form.ends === 'date'}
-                  onPress={() => set({ ends: 'date', endDate: form.endDate ?? addMonths(form.start, 12) })}
+                  onPress={() => {
+                    set({ ends: 'date', endDate: form.endDate ?? addMonths(form.start, 12) });
+                    setPicking('end');
+                  }}
                 />
                 <Chip label={`After ${form.times} times`} selected={form.ends === 'times'} onPress={() => set({ ends: 'times' })} />
               </View>
               {form.ends === 'date' && form.endDate ? (
-                <Calendar value={form.endDate} min={form.start} onChange={(d) => set({ endDate: d })} />
+                <Pressable accessibilityRole="button" onPress={() => setPicking('end')} hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+                  <Text variant="label" color={c.focus}>
+                    Ends {shortDate(form.endDate)} · Change date
+                  </Text>
+                </Pressable>
               ) : null}
               {form.ends === 'times' ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
@@ -460,6 +475,28 @@ export function RecurringPanel({
           </Pressable>
         </Card>
       ) : null}
+
+      <Sheet
+        visible={picking !== null}
+        onClose={() => setPicking(null)}
+        title={picking === 'end' ? 'Ends on' : editingSchedule ? 'Next one' : 'Starts'}
+        footer={<Button label="Done" onPress={() => setPicking(null)} />}>
+        {picking === 'start' ? (
+          <View style={{ gap: space.md }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
+              <Chip label="Today" selected={form.start === todayDate()} onPress={() => pickStart(todayDate())} />
+            </View>
+            <Calendar value={form.start} min={todayDate()} onChange={pickStart} />
+          </View>
+        ) : picking === 'end' ? (
+          <View style={{ gap: space.md }}>
+            <Text variant="caption" muted>
+              The last one is on or before this date.
+            </Text>
+            <Calendar value={form.endDate ?? addMonths(form.start, 12)} min={form.start} onChange={(d) => set({ ends: 'date', endDate: d })} />
+          </View>
+        ) : null}
+      </Sheet>
     </View>
   );
 }
