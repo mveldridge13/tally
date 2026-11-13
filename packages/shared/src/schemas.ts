@@ -34,6 +34,8 @@ export const splitInputSchema = z.discriminatedUnion('method', [
         }),
       )
       .min(1),
+    rest: z.enum(['equal', 'proportional']).optional(),
+    participants: z.array(idSchema).optional(),
   }),
   z.object({
     method: z.literal('adjustment'),

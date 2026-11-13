@@ -1,10 +1,11 @@
 import {
   centsToDecimalString,
   computeSplit,
-  adjustmentsTotal,
   FULL_PERCENT_BPS,
   formatMoney,
+  inferItemsRest,
   itemsSubtotal,
+  type ItemsRest,
   parseToCents,
   SplitError,
   type SplitInput,
@@ -25,9 +26,14 @@ import { useCreateExpense, useNameOf, useTallyData, useUpdateExpense, type Expen
 import { useAfterTransition } from '@/lib/transitions';
 import { brand, groupColor, radius, space, type, useColors } from '@/theme';
 
-const METHODS: { id: SplitMethod; label: string; hint: string }[] = [
+/**
+ * The ways to split offered on the form. Amounts and adjustments are covered by Items (one line
+ * per person, or one extra plus everything else split equally); expenses saved those ways
+ * still show, and open as items when edited.
+ */
+type FormMethod = 'equal' | 'percentage' | 'shares' | 'items';
+const METHODS: { id: FormMethod; label: string; hint: string }[] = [
   { id: 'equal', label: 'Equally', hint: 'Everyone ticked pays the same.' },
-  { id: 'exact', label: 'Amounts', hint: 'Enter how much each person owes.' },
   {
     id: 'percentage',
     label: 'Percent',
@@ -41,17 +47,9 @@ const METHODS: { id: SplitMethod; label: string; hint: string }[] = [
   {
     id: 'items',
     label: 'Items',
-    hint: 'Add each item and tap who had it. Tax or tip on top of the items is shared in proportion to what each person had.',
-  },
-  {
-    id: 'adjustment',
-    label: 'Adjust',
-    hint: 'Split equally, then add anything extra someone had. Tap ± for someone who should pay less.',
+    hint: 'Add what was someone’s own, like a meal or a drink, and tap who had it. Everything else is split equally or in proportion.',
   },
 ];
-
-/** Flip an adjustment typed on the form between paying more ("15") and paying less ("-15"). */
-const flipSign = (v: string) => (v.startsWith('-') ? v.slice(1) : `-${v}`);
 
 /** An item as typed on the form: the price stays text until it's parsed. */
 interface ItemRow {
@@ -78,8 +76,9 @@ function currencySymbol(currency: string): string {
 }
 
 /** Form state derived from a saved expense, so editing shows exactly what was entered. */
-function initialFromExpense(expense: Expense | undefined, memberIds: string[]) {
-  if (!expense) return { included: {}, values: {}, items: [newItem()] };
+function initialFromExpense(expense: Expense | undefined, memberIds: string[], name: (id: string) => string) {
+  const blank = { method: 'equal' as FormMethod, included: {}, values: {}, items: [newItem()], rest: 'equal' as ItemsRest };
+  if (!expense) return blank;
   const inSplit = new Map(expense.splits.map((s) => [s.userId, s]));
   const included: Record<string, boolean> = {};
   const values: Record<string, string> = {};
@@ -87,18 +86,52 @@ function initialFromExpense(expense: Expense | undefined, memberIds: string[]) {
     const s = inSplit.get(id);
     included[id] = !!s;
     if (!s) continue;
-    if (expense.method === 'exact') values[id] = centsToDecimalString(s.amount);
     if (expense.method === 'percentage' && s.weight != null) values[id] = centsToDecimalString(s.weight).replace(/\.00$/, '');
     if (expense.method === 'shares' && s.weight != null) values[id] = String(s.weight);
-    if (expense.method === 'adjustment' && s.weight) values[id] = centsToDecimalString(s.weight);
   }
-  const items: ItemRow[] = expense.items?.map((i) => ({
+  const toRow = (rowName: string, amount: number, userIds: string[]): ItemRow => ({
     key: nextItemKey++,
-    name: i.name,
-    price: centsToDecimalString(i.amount),
-    userIds: i.userIds,
-  })) ?? [newItem()];
-  return { included, values, items };
+    name: rowName,
+    price: centsToDecimalString(amount),
+    userIds,
+  });
+  switch (expense.method) {
+    case 'items': {
+      const items = expense.items ?? [];
+      const { rest, participants } = inferItemsRest(expense.amount, items, expense.splits);
+      // Ticked = shares everything else.
+      for (const id of memberIds) included[id] = participants.includes(id);
+      return {
+        method: 'items' as FormMethod,
+        included,
+        values,
+        items: items.length ? items.map((i) => toRow(i.name, i.amount, i.userIds)) : [newItem()],
+        rest,
+      };
+    }
+    // Saved by amounts: one line per person, nothing left over.
+    case 'exact':
+      return {
+        method: 'items' as FormMethod,
+        included,
+        values,
+        items: expense.splits.filter((s) => s.amount > 0).map((s) => toRow(name(s.userId), s.amount, [s.userId])),
+        rest: 'equal' as ItemsRest,
+      };
+    // Saved with adjustments: each extra is a line, the rest split equally between everyone.
+    case 'adjustment': {
+      const extras = expense.splits.filter((s) => (s.weight ?? 0) > 0);
+      return {
+        method: 'items' as FormMethod,
+        included,
+        values,
+        items: extras.length ? extras.map((s) => toRow(`Extra for ${name(s.userId)}`, s.weight!, [s.userId])) : [newItem()],
+        rest: 'equal' as ItemsRest,
+      };
+    }
+    default:
+      return { ...blank, method: expense.method as FormMethod, included, values };
+  }
 }
 
 // ─── Small themed controls ───────────────────────────────────────────────────
@@ -129,14 +162,13 @@ function PersonPill({ label, selected, onPress }: { label: string; selected: boo
   );
 }
 
-/** Segmented control for the split method: two rows of three so every label stays readable. */
-function Segmented({ value, onChange }: { value: SplitMethod; onChange: (m: SplitMethod) => void }) {
+/** Segmented control for the split method. */
+function Segmented({ value, onChange }: { value: FormMethod; onChange: (m: FormMethod) => void }) {
   const c = useColors();
   return (
     <View
       style={{
         flexDirection: 'row',
-        flexWrap: 'wrap',
         backgroundColor: c.surfaceAlt,
         borderRadius: radius.md,
         padding: 4,
@@ -151,8 +183,7 @@ function Segmented({ value, onChange }: { value: SplitMethod; onChange: (m: Spli
             accessibilityState={{ selected }}
             onPress={() => onChange(m.id)}
             style={{
-              flexGrow: 1,
-              flexBasis: '30%',
+              flex: 1,
               alignItems: 'center',
               paddingVertical: space.sm + 2,
               borderRadius: radius.sm + 2,
@@ -235,14 +266,17 @@ export default function ExpenseFormScreen() {
     return ids;
   }, [group, editing]);
 
-  const initial = useMemo(() => initialFromExpense(editing, members), [editing, members]);
+  // Only worked out once: a later name change shouldn't rewrite lines being edited.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initial = useMemo(() => initialFromExpense(editing, members, name), [editing, members]);
   const [description, setDescription] = useState(editing?.description ?? '');
   const [amountText, setAmountText] = useState(editing ? centsToDecimalString(editing.amount) : '');
   const [payerId, setPayerId] = useState(editing?.payerId ?? myId);
-  const [method, setMethod] = useState<SplitMethod>(editing?.method ?? 'equal');
+  const [method, setMethod] = useState<FormMethod>(initial.method);
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
   const [items, setItems] = useState<ItemRow[]>(initial.items);
+  const [rest, setRest] = useState<ItemsRest>(initial.rest);
   const updateItem = (key: number, change: Partial<ItemRow>) =>
     setItems((list) => list.map((i) => (i.key === key ? { ...i, ...change } : i)));
   function pickGroup(id: string) {
@@ -292,14 +326,6 @@ export default function ExpenseFormScreen() {
       switch (method) {
         case 'equal':
           return { method, participants: participantIds };
-        case 'exact':
-          return {
-            method,
-            shares: participantIds.map((userId) => ({
-              userId,
-              amount: parseToCents(values[userId] || '0'),
-            })),
-          };
         case 'percentage':
           // "33.33" -> 3333 basis points, using the same exact decimal parser as money.
           return {
@@ -326,21 +352,15 @@ export default function ExpenseFormScreen() {
               amount: parseToCents(item.price || '0'),
               userIds: members.filter((id) => item.userIds.includes(id)),
             })),
-          };
-        case 'adjustment':
-          return {
-            method,
-            shares: participantIds.map((userId) => ({
-              userId,
-              adjustment: parseToCents((values[userId] || '0').replace(/^\+/, '')),
-            })),
+            rest,
+            participants: rest === 'equal' ? participantIds : undefined,
           };
       }
     } catch {
       return 'Check the numbers you entered.';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [participantKey, method, values, items, members]);
+  }, [participantKey, method, values, items, members, rest]);
 
   const preview: Preview = useMemo(() => {
     if (!Number.isFinite(amount)) return { ok: false, error: 'Enter a valid amount, like 12.50.' };
@@ -356,14 +376,9 @@ export default function ExpenseFormScreen() {
     }
   }, [amount, splitInput]);
 
-  /** "€12.50 left to assign" / "20% left" for exact and percentage splits. */
+  /** "20% left to assign" for percentage splits; items that come to more than the total. */
   const remaining = useMemo(() => {
     if (typeof splitInput === 'string' || !group) return null;
-    if (splitInput.method === 'exact' && Number.isFinite(amount)) {
-      const left = amount - splitInput.shares.reduce((a, s) => a + s.amount, 0);
-      if (left === 0) return null;
-      return left > 0 ? `${formatMoney(left, group.currency)} left to assign` : `${formatMoney(-left, group.currency)} too much assigned`;
-    }
     if (splitInput.method === 'percentage') {
       const left = FULL_PERCENT_BPS - splitInput.shares.reduce((a, s) => a + s.basisPoints, 0);
       if (left === 0) return null;
@@ -374,23 +389,13 @@ export default function ExpenseFormScreen() {
       const over = itemsSubtotal(splitInput.items) - amount;
       return over > 0 ? `Items come to ${formatMoney(over, group.currency)} more than the total` : null;
     }
-    if (splitInput.method === 'adjustment' && Number.isFinite(amount) && amount > 0) {
-      const over = adjustmentsTotal(splitInput.shares) - amount;
-      return over > 0 ? `Adjustments come to ${formatMoney(over, group.currency)} more than the total` : null;
-    }
     return null;
   }, [splitInput, amount, group]);
 
-  /** For an items split: what the items come to, and what's left over for tax, tip and extras. */
+  /** For an items split: what the items come to, and what's left over for everything else. */
   const itemTotals =
     typeof splitInput !== 'string' && splitInput.method === 'items'
       ? { items: itemsSubtotal(splitInput.items), extra: Number.isFinite(amount) ? amount - itemsSubtotal(splitInput.items) : 0 }
-      : null;
-
-  /** For an adjusted split: what's left to share equally once the adjustments are taken off. */
-  const equalPart =
-    typeof splitInput !== 'string' && splitInput.method === 'adjustment' && Number.isFinite(amount) && amount > 0
-      ? amount - adjustmentsTotal(splitInput.shares)
       : null;
 
   const title = isEdit ? 'Edit expense' : 'New expense';
@@ -445,7 +450,12 @@ export default function ExpenseFormScreen() {
   }
 
   const payerLabel = payerId === myId ? 'you' : name(payerId);
-  const n = method === 'items' ? new Set(items.flatMap((i) => i.userIds)).size : participantIds.length;
+  // Who shares everything else in an items split (only when there's something left over).
+  const restEqual = method === 'items' && rest === 'equal' && !!itemTotals && itemTotals.extra > 0;
+  const n =
+    method === 'items'
+      ? new Set([...items.flatMap((i) => i.userIds), ...(restEqual ? participantIds : [])]).size
+      : participantIds.length;
   const methodWords: Record<SplitMethod, string> = {
     equal: 'equally',
     exact: 'by amounts',
@@ -469,7 +479,7 @@ export default function ExpenseFormScreen() {
 
   const card = (
     <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: space.sm }}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={canPickGroup ? `Group: ${group?.name ?? 'none'}. Change group` : `Group: ${group?.name ?? 'none'}`}
@@ -491,6 +501,27 @@ export default function ExpenseFormScreen() {
             {canPickGroup ? '  ▾' : ''}
           </Text>
         </Pressable>
+        {/* Start a new group straight from here. */}
+        {canPickGroup ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="New group"
+            onPress={() => router.push({ pathname: '/new-group', params: { forExpense: '1' } })}
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: space.md,
+              minHeight: 38,
+              justifyContent: 'center',
+              borderRadius: radius.pill,
+              borderWidth: 1.5,
+              borderStyle: 'dashed',
+              borderColor: 'rgba(255,255,255,0.4)',
+            }}>
+            <Text variant="label" color={brand.onDeep}>
+              ＋ New group
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Big amount entry */}
@@ -609,16 +640,7 @@ export default function ExpenseFormScreen() {
       <Sheet
         visible={sheet === 'split'}
         onClose={() => setSheet(null)}
-        footer={
-          <>
-            {remaining ? (
-              <Text variant="label" color={c.danger} style={{ textAlign: 'center' }}>
-                {remaining}
-              </Text>
-            ) : null}
-            <Button label="Done" onPress={() => setSheet(null)} />
-          </>
-        }>
+        fullHeight>
         <View style={{ gap: space.sm }}>
           <Text variant="heading">Paid by</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
@@ -733,25 +755,39 @@ export default function ExpenseFormScreen() {
                   ＋ Add item
                 </Text>
               </Pressable>
-              {itemTotals && group ? (
-                <Text variant="caption" muted style={{ textAlign: 'center' }}>
-                  Items {formatMoney(itemTotals.items, group.currency)}
-                  {itemTotals.extra > 0 && amount > 0
-                    ? ` · ${formatMoney(itemTotals.extra, group.currency)} tax, tip & extras, shared in proportion`
-                    : ''}
-                </Text>
+              {itemTotals && group && amount > 0 ? (
+                itemTotals.extra > 0 ? (
+                  <Card style={{ gap: space.sm }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                      <Text variant="heading" style={{ flex: 1 }}>
+                        Everything else
+                      </Text>
+                      <Text variant="heading" style={{ fontVariant: ['tabular-nums'] }}>
+                        {formatMoney(itemTotals.extra, group.currency)}
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
+                      <Chip label="Split equally" selected={rest === 'equal'} onPress={() => setRest('equal')} />
+                      <Chip label="In proportion" selected={rest === 'proportional'} onPress={() => setRest('proportional')} />
+                    </View>
+                    <Text variant="caption" muted>
+                      {rest === 'equal'
+                        ? 'Shared equally by everyone ticked below.'
+                        : 'For tax and tip: whoever had more pays more.'}
+                    </Text>
+                  </Card>
+                ) : (
+                  <Text variant="caption" muted style={{ textAlign: 'center' }}>
+                    Items {formatMoney(itemTotals.items, group.currency)} · nothing left over
+                  </Text>
+                )
               ) : null}
             </View>
           ) : null}
-          {method === 'adjustment' && equalPart != null && equalPart >= 0 && group && participantIds.length > 0 ? (
-            <Text variant="caption" muted style={{ textAlign: 'center' }}>
-              {formatMoney(equalPart, group.currency)} split equally between {participantIds.length}, then each
-              adjustment added on
-            </Text>
-          ) : null}
           <Card style={{ paddingVertical: space.xs }}>
             {members.map((id, i) => {
-              const on = method === 'items' ? items.some((item) => item.userIds.includes(id)) : isIncluded(id);
+              const hadItem = items.some((item) => item.userIds.includes(id));
+              const on = method === 'items' ? hadItem || (restEqual && isIncluded(id)) : isIncluded(id);
               const share = preview.ok ? preview.shares.find((s) => s.userId === id) : undefined;
               return (
                 <View key={id}>
@@ -764,10 +800,15 @@ export default function ExpenseFormScreen() {
                       paddingVertical: space.md,
                       opacity: on ? 1 : 0.55,
                     }}>
-                    {method === 'items' ? (
+                    {method === 'items' && !restEqual ? (
                       <Avatar name={name(id)} size={26} color={on ? groupColor(id) : undefined} />
                     ) : (
-                      <Tick on={on} label={name(id)} onPress={() => setIncluded((s) => ({ ...s, [id]: !on }))} />
+                      // In an items split the tick is "shares everything else"; having an item keeps them in either way.
+                      <Tick
+                        on={isIncluded(id)}
+                        label={name(id)}
+                        onPress={() => setIncluded((s) => ({ ...s, [id]: !isIncluded(id) }))}
+                      />
                     )}
                     <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
                       {id === myId ? 'You' : name(id)}
@@ -781,32 +822,14 @@ export default function ExpenseFormScreen() {
                           borderRadius: radius.sm,
                           paddingHorizontal: space.sm,
                         }}>
-                        {method === 'adjustment' ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`${name(id)} pays ${(values[id] ?? '').startsWith('-') ? 'less' : 'more'}. Switch`}
-                            onPress={() => setValues((s) => ({ ...s, [id]: flipSign(s[id] ?? '') }))}
-                            hitSlop={8}
-                            style={{ paddingRight: space.xs }}>
-                            <Text variant="label" color={c.primary}>
-                              {(values[id] ?? '').startsWith('-') ? '−' : '+'}
-                            </Text>
-                          </Pressable>
-                        ) : null}
                         <TextInput
-                          value={method === 'adjustment' ? (values[id] ?? '').replace(/^-/, '') : (values[id] ?? '')}
-                          onChangeText={(v) =>
-                            setValues((s) => ({
-                              ...s,
-                              // Keep an adjustment's sign when the number is retyped.
-                              [id]: method === 'adjustment' && (s[id] ?? '').startsWith('-') ? `-${v}` : v,
-                            }))
-                          }
+                          value={values[id] ?? ''}
+                          onChangeText={(v) => setValues((s) => ({ ...s, [id]: v }))}
                           placeholder={method === 'shares' ? '1' : '0'}
                           placeholderTextColor={c.textMuted}
                           keyboardType={method === 'shares' ? 'number-pad' : 'decimal-pad'}
                           selectionColor={c.focus}
-                          accessibilityLabel={`${name(id)} ${method === 'percentage' ? 'percentage' : method === 'shares' ? 'shares' : method === 'adjustment' ? 'adjustment' : 'amount'}`}
+                          accessibilityLabel={`${name(id)} ${method === 'percentage' ? 'percentage' : method === 'shares' ? 'shares' : 'amount'}`}
                           style={{ ...type.body, color: c.text, width: 64, textAlign: 'right', paddingVertical: space.sm }}
                         />
                         {method === 'percentage' ? <Text muted> %</Text> : null}
@@ -824,44 +847,21 @@ export default function ExpenseFormScreen() {
             })}
           </Card>
         </View>
+
+        {/* Done sits at the end of the form, not pinned, so typing an item keeps the whole space. */}
+        <View style={{ gap: space.sm }}>
+          {remaining ? (
+            <Text variant="label" color={c.danger} style={{ textAlign: 'center' }}>
+              {remaining}
+            </Text>
+          ) : null}
+          <Button label="Done" onPress={() => setSheet(null)} />
+        </View>
       </Sheet>
 
       {/* Which group (only when starting from Home with more than one group) */}
       <Sheet visible={sheet === 'group'} onClose={() => setSheet(null)} title="Which group?">
         <View style={{ gap: space.sm }}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setSheet(null);
-              router.push({ pathname: '/new-group', params: { forExpense: '1' } });
-            }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: space.md,
-              padding: space.md,
-              borderRadius: radius.lg,
-              borderWidth: 1.5,
-              borderStyle: 'dashed',
-              borderColor: c.border,
-            }}>
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: c.surfaceAlt,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-              <Text variant="heading" color={c.primary}>
-                ＋
-              </Text>
-            </View>
-            <Text variant="heading" color={c.primary} style={{ flex: 1 }}>
-              New group
-            </Text>
-          </Pressable>
           {groups.map((g) => (
             <Pressable
               key={g.id}

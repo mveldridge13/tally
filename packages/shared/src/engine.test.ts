@@ -4,6 +4,7 @@ import {
   computeBalances,
   computeSplit,
   createExpenseSchema,
+  inferItemsRest,
   LedgerError,
   normalisePayId,
   formatPayId,
@@ -142,6 +143,46 @@ describe('computeSplit', () => {
       { userId: 'a', amount: 8250 },
       { userId: 'b', amount: 2750 },
     ]);
+  });
+
+  it('can split everything else equally, covering a one-off extra', () => {
+    // $90 dinner for three; a also had a $15 cocktail. The other $75 is split three ways.
+    expect(
+      computeSplit(9000, {
+        method: 'items',
+        items: [{ name: 'Cocktail', amount: 1500, userIds: ['a'] }],
+        rest: 'equal',
+        participants: ['a', 'b', 'c'],
+      }),
+    ).toEqual([
+      { userId: 'a', amount: 4000 },
+      { userId: 'b', amount: 2500 },
+      { userId: 'c', amount: 2500 },
+    ]);
+  });
+
+  it('works out how a saved items split shared everything else', () => {
+    const items = [{ name: 'Cocktail', amount: 1500, userIds: ['a'] }];
+    const equal = computeSplit(9000, { method: 'items', items, rest: 'equal', participants: ['a', 'b'] });
+    expect(inferItemsRest(9000, items, equal)).toEqual({ rest: 'equal', participants: ['a', 'b'] });
+    // a had the cocktail but isn't sharing the rest.
+    const notA = computeSplit(9000, { method: 'items', items, rest: 'equal', participants: ['b', 'c'] });
+    expect(inferItemsRest(9000, items, notA)).toEqual({ rest: 'equal', participants: ['b', 'c'] });
+    const both = [...items, { name: 'Pasta', amount: 1500, userIds: ['b'] }];
+    expect(inferItemsRest(4000, both, computeSplit(4000, { method: 'items', items: both })).rest).toBe('equal');
+    const uneven = [
+      { name: 'Mains', amount: 7500, userIds: ['a'] },
+      { name: 'Dessert', amount: 2500, userIds: ['b'] },
+    ];
+    expect(inferItemsRest(11_000, uneven, computeSplit(11_000, { method: 'items', items: uneven })).rest).toBe(
+      'proportional',
+    );
+  });
+
+  it('needs someone to share everything else when it is split equally', () => {
+    expect(() =>
+      computeSplit(9000, { method: 'items', items: [{ name: 'Cocktail', amount: 1500, userIds: ['a'] }], rest: 'equal' }),
+    ).toThrow(expect.objectContaining({ code: 'NO_PARTICIPANTS' }));
   });
 
   it('rejects items that are empty, unassigned or more than the total', () => {

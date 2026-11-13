@@ -3,15 +3,16 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 
-import { CardFigure, Gutter, HeroScreen, onDeepMuted, oweOnDeep, SectionTitle } from '@/components/dashboard';
+import { CardText, Gutter, HeroScreen, SectionTitle, SummaryCard } from '@/components/dashboard';
+import { CountUp } from '@/components/fun';
+import { Bubble, BubbleDays } from '@/components/group-visuals';
 import { Avatar, Button, Card, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
 import { PayIdCard } from '@/components/payid-card';
 import { PAYID_CURRENCY, useNameOf, useRemoveMember, useSetCoOwner, useTallyData, useTransferOwnership } from '@/lib/data';
 import { sendInvite } from '@/lib/invite';
-import { relativeTime } from '@/lib/format';
-import { useGroupSummary } from '@/store/hooks';
-import { balanceColor, brand, groupColor, PRESS_DELAY, radius, space, useColors } from '@/theme';
+import { useGroupSummary, type ActivityItem } from '@/store/hooks';
+import { balanceColor, brand, groupColor, groupTint, PRESS_DELAY, radius, space, useColors } from '@/theme';
 
 /**
  * Balance breakdown for one group.
@@ -108,27 +109,65 @@ export default function BalanceBreakdownScreen() {
     total > 0 ? `${name(id)} owes you` : total < 0 ? `You owe ${name(id)}` : `You and ${name(id)} are settled up`;
 
   const headerAmount = otherId ? (pair?.total ?? 0) : myBalance;
+  const title = otherId ? `You and ${they}` : 'Your balance';
+  const sentence = otherId
+    ? headerAmount === 0
+      ? 'All square 🎉'
+      : pairSentence(otherId, headerAmount)
+    : headerAmount === 0
+      ? 'All square in this group 🎉'
+      : headerAmount > 0
+        ? 'You’re owed in this group'
+        : 'You owe in this group';
+  // The same light card in the group's colour as the group's own page.
   const card = (
-    <CardFigure
-      label={otherId ? 'Between you two' : 'In this group'}
-      value={`${headerAmount > 0 ? '+' : headerAmount < 0 ? '−' : ''}${money(headerAmount)}`}
-      note={
-        otherId
-          ? pairSentence(otherId, headerAmount)
-          : headerAmount === 0
-            ? 'You’re settled up in this group'
-            : headerAmount > 0
-              ? 'You’re owed in this group'
-              : 'You owe in this group'
-      }
-      noteColor={headerAmount === 0 ? onDeepMuted : headerAmount > 0 ? brand.accent : oweOnDeep}
-    />
+    <SummaryCard tone="light" background={groupTint(group.id)}>
+      <View style={{ gap: space.md }}>
+        <View style={{ gap: 2 }}>
+          <CardText variant="label" muted style={{ fontWeight: '700' }}>
+            {group.icon ? `${group.icon} ` : ''}
+            {group.name}
+          </CardText>
+          <CardText variant="title" style={{ fontSize: 26, lineHeight: 31, fontWeight: '800', letterSpacing: -0.5 }}>
+            {title}
+          </CardText>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {[myId, ...(otherId ? [otherId] : [])].map((id, i) => (
+            <View key={id} style={{ marginLeft: i === 0 ? 0 : -10, borderRadius: 24, borderWidth: 3, borderColor: groupTint(group.id) }}>
+              <Avatar name={name(id)} size={42} color={groupColor(id)} />
+            </View>
+          ))}
+        </View>
+        <View>
+          <CardText variant="label" muted style={{ fontWeight: '700' }}>
+            {otherId ? 'Between you two' : 'In this group'}
+          </CardText>
+          <CountUp
+            cents={Math.abs(headerAmount)}
+            currency={group.currency}
+            style={{ color: brand.onCoral, fontSize: 36, fontWeight: '800', letterSpacing: -1, fontVariant: ['tabular-nums'] }}
+          />
+        </View>
+        <View
+          style={{
+            alignSelf: 'flex-start',
+            backgroundColor: 'rgba(255,255,255,0.6)',
+            borderRadius: radius.pill,
+            paddingHorizontal: space.md,
+            paddingVertical: 6,
+          }}>
+          <CardText variant="label" style={{ fontWeight: '700' }}>
+            {sentence}
+          </CardText>
+        </View>
+      </View>
+    </SummaryCard>
   );
   const heroProps = {
     nav: 'back' as const,
-    eyebrow: group.name,
-    title: otherId ? `You and ${they}` : 'Your balance',
-    card,
+    title,
+    hideTitle: true,
   };
 
   // ─── You and one person ──────────────────────────────────────────────────
@@ -196,6 +235,7 @@ export default function BalanceBreakdownScreen() {
     return (
       <HeroScreen {...heroProps}>
         <Stack.Screen options={{ headerShown: false }} />
+        {card}
 
         {theirPayId ? (
           <Gutter>
@@ -215,62 +255,52 @@ export default function BalanceBreakdownScreen() {
                 Only items you added are shown. The owner and co-owners see everything.
               </Text>
             )}
-            <Card style={{ paddingVertical: pair.rows.length ? 0 : space.lg }}>
-              {pair.rows.length === 0 ? <Text muted>Nothing between you two in this group yet.</Text> : null}
-              {pair.rows.map((r, i) => {
-                const isExpense = r.kind === 'expense';
-                const subtitle = isExpense
-                  ? r.payerId === myId
-                    ? `You paid ${money(r.total)} · ${they}’s share · ${relativeTime(r.at)}`
-                    : `${they} paid ${money(r.total)} · your share · ${relativeTime(r.at)}`
-                  : `Payment · ${relativeTime(r.at)}`;
-                const title = isExpense ? r.title : r.payerId === myId ? `You paid ${they}` : `${they} paid you`;
-                return (
-                  <View key={r.key}>
-                    {i > 0 ? <Divider /> : null}
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() =>
-                        isExpense
-                          ? router.push({ pathname: '/expense/[id]', params: { id: r.id } })
-                          : router.push({ pathname: '/payment/[id]', params: { id: r.id } })
-                      }
-                      android_ripple={{ color: c.surfaceAlt }}
-                      unstable_pressDelay={PRESS_DELAY}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
-                      <View
-                        style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: radius.md,
-                          backgroundColor: (isExpense ? groupColor(group.id) : c.owed) + '22',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}>
-                        <Text style={{ fontSize: 18, fontWeight: '700', color: isExpense ? groupColor(group.id) : c.owed }}>
-                          {isExpense ? r.title.slice(0, 1).toUpperCase() : '⇄'}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text variant="heading" numberOfLines={1}>
-                          {title}
-                        </Text>
-                        <Text variant="caption" muted numberOfLines={1}>
-                          {subtitle}
-                        </Text>
-                      </View>
-                      <Text variant="heading" color={balanceColor(c, r.amount)} style={{ fontVariant: ['tabular-nums'] }}>
-                        {r.amount > 0 ? '+' : '−'}
-                        {money(r.amount)}
-                      </Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </Card>
+            {pair.rows.length === 0 ? (
+              <Card style={{ alignItems: 'center', gap: space.sm, paddingVertical: space.xl }}>
+                <Text style={{ fontSize: 36 }}>🧾</Text>
+                <Text muted style={{ textAlign: 'center' }}>
+                  Nothing between you two in this group yet.
+                </Text>
+              </Card>
+            ) : (
+              // The same chat bubbles as the group's feed; the right side shows what each adds between you two.
+              <BubbleDays
+                items={pair.rows.map(
+                  (r): ActivityItem =>
+                    r.kind === 'expense'
+                      ? { kind: 'expense', id: r.id, groupId: group.id, at: r.at, title: r.title, amount: r.total, actorId: r.payerId, myEffect: 0, involved: true }
+                      : {
+                          kind: 'settlement',
+                          id: r.id,
+                          groupId: group.id,
+                          at: r.at,
+                          fromUserId: r.payerId,
+                          toUserId: r.payerId === myId ? otherId : myId,
+                          amount: r.total,
+                          myEffect: 0,
+                          involved: true,
+                        },
+                )}
+                render={(item) => {
+                  const r = pair.rows.find((x) => x.id === item.id)!;
+                  return (
+                    <Bubble
+                      key={item.id}
+                      item={item}
+                      currency={group.currency}
+                      figure={{
+                        big: `${r.amount > 0 ? '+' : '−'}${money(r.amount)}`,
+                        small: r.kind === 'expense' ? (r.payerId === myId ? `${they}’s share` : 'your share') : undefined,
+                        color: balanceColor(c, r.amount),
+                      }}
+                    />
+                  );
+                }}
+              />
+            )}
             {pair.rows.length > 0 ? (
               <Text variant="caption" muted>
-                + adds to what {they} owes you; − adds to what you owe {they}. Tap any item for its details.
+                + adds to what {they} owes you; − adds to what you owe {they}. Tap any bubble for its details.
               </Text>
             ) : null}
           </Gutter>
@@ -302,22 +332,26 @@ export default function BalanceBreakdownScreen() {
               </Text>
             </>
           ) : null}
-          {/* Owner only: managing this person, as small pills side by side. */}
+          {/* Owner only: managing this person. The two role changes share a row; removing sits under them, in red. */}
           {canManage ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            <View style={{ gap: space.sm }}>
               {isGuest ? null : (
-                <>
-                  <Button
-                    kind="secondary"
-                    size="small"
-                    label={isCoOwner ? 'Remove co-owner' : 'Make co-owner'}
-                    onPress={toggleCoOwner}
-                    loading={setCoOwner.isPending}
-                  />
-                  <Button kind="secondary" size="small" label="Make owner" onPress={makeOwner} loading={transferOwnership.isPending} />
-                </>
+                <View style={{ flexDirection: 'row', gap: space.sm }}>
+                  <View style={{ flex: 1 }}>
+                    <Button
+                      kind="secondary"
+                      size="small"
+                      label={isCoOwner ? 'Remove co-owner' : 'Make co-owner'}
+                      onPress={toggleCoOwner}
+                      loading={setCoOwner.isPending}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Button kind="secondary" size="small" label="Make owner" onPress={makeOwner} loading={transferOwnership.isPending} />
+                  </View>
+                </View>
               )}
-              <Button kind="secondary" size="small" label="Remove from group" onPress={remove} loading={removeMember.isPending} />
+              <Button kind="danger" size="small" label="Remove from group" onPress={remove} loading={removeMember.isPending} />
             </View>
           ) : null}
           {memberError ? <Notice>{memberError.message}</Notice> : null}
@@ -336,6 +370,7 @@ export default function BalanceBreakdownScreen() {
   return (
     <HeroScreen {...heroProps}>
       <Stack.Screen options={{ headerShown: false }} />
+      {card}
       <View style={{ gap: space.md }}>
         <SectionTitle title="Person by person" />
         <Gutter>
@@ -351,7 +386,7 @@ export default function BalanceBreakdownScreen() {
                   android_ripple={{ color: c.surfaceAlt }}
                   unstable_pressDelay={PRESS_DELAY}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
-                  <Avatar name={name(p.id)} size={40} />
+                  <Avatar name={name(p.id)} size={40} color={groupColor(p.id)} />
                   <Text variant="heading" style={{ flex: 1 }} numberOfLines={1}>
                     {pairSentence(p.id, p.total)}
                   </Text>

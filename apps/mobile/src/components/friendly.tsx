@@ -5,8 +5,8 @@
 import { formatMoney, type Cents } from '@tally/shared';
 import { useEffect, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { brand, groupColor, radius, space, useColors } from '@/theme';
@@ -91,6 +91,7 @@ export function Sheet({
   title,
   children,
   footer,
+  fullHeight,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -98,11 +99,13 @@ export function Sheet({
   children: ReactNode;
   /** Pinned under the scrolling content, e.g. a Done button. */
   footer?: ReactNode;
+  /** Always open at full height, so content that changes (e.g. switching tabs) doesn't resize it. */
+  fullHeight?: boolean;
 }) {
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent navigationBarTranslucent>
       {visible ? (
-        <SheetBody onClose={onClose} title={title} footer={footer}>
+        <SheetBody onClose={onClose} title={title} footer={footer} fullHeight={fullHeight}>
           {children}
         </SheetBody>
       ) : null}
@@ -115,7 +118,19 @@ export function Sheet({
  * pushed below the screen, backdrop clear) and animate in from there. Reanimated's `entering`
  * animations drew one frame in the final position first inside a Modal, which flickered.
  */
-function SheetBody({ onClose, title, children, footer }: { onClose: () => void; title?: string; children: ReactNode; footer?: ReactNode }) {
+function SheetBody({
+  onClose,
+  title,
+  children,
+  footer,
+  fullHeight,
+}: {
+  onClose: () => void;
+  title?: string;
+  children: ReactNode;
+  footer?: ReactNode;
+  fullHeight?: boolean;
+}) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -128,7 +143,14 @@ function SheetBody({ onClose, title, children, footer }: { onClose: () => void; 
     shade.set(withTiming(1, { duration: 200 }));
   }, [offset, shade]);
 
-  const panelStyle = useAnimatedStyle(() => ({ transform: [{ translateY: offset.get() }] }));
+  // The bottom padding keeps content clear of the gesture bar. The keyboard covers that bar, so
+  // the padding shrinks as the keyboard rises, frame by frame with it (no jump on keyboard events).
+  const keyboard = useReanimatedKeyboardAnimation();
+  const restingPadding = insets.bottom + space.lg;
+  const panelStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: offset.get() }],
+    paddingBottom: interpolate(keyboard.progress.get(), [0, 1], [restingPadding, space.sm]),
+  }));
   const shadeStyle = useAnimatedStyle(() => ({ opacity: shade.get() }));
 
   return (
@@ -139,11 +161,11 @@ function SheetBody({ onClose, title, children, footer }: { onClose: () => void; 
       <Animated.View
         style={[
           {
-            maxHeight: '88%',
+            // A full-height panel can still shrink to fit above the keyboard.
+            ...(fullHeight ? { height: '88%', flexShrink: 1 } : { maxHeight: '88%' }),
             backgroundColor: c.bg,
             borderTopLeftRadius: 32,
             borderTopRightRadius: 32,
-            paddingBottom: insets.bottom + space.lg,
           },
           panelStyle,
         ]}>
@@ -151,6 +173,7 @@ function SheetBody({ onClose, title, children, footer }: { onClose: () => void; 
           <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: c.surfaceAlt }} />
         </View>
         <ScrollView
+          style={fullHeight ? { flex: 1 } : undefined}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: space.lg, paddingTop: space.md, paddingBottom: space.lg, gap: space.lg }}>

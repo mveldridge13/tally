@@ -49,6 +49,7 @@ export function HeroScreen({
   onRefresh,
   variant = 'full',
   fullWidth = false,
+  hideTitle = false,
 }: {
   nav: NavMode;
   eyebrow?: string;
@@ -72,6 +73,8 @@ export function HeroScreen({
   variant?: 'full' | 'card';
   /** Use the whole width on wide screens instead of a centred column. */
   fullWidth?: boolean;
+  /** Leave out the title row, for a screen whose first card already says what it is (a group's page). */
+  hideTitle?: boolean;
 }) {
   const c = useColors();
   const scheme = useColorScheme();
@@ -118,6 +121,7 @@ export function HeroScreen({
               </View>
             </View>
           ) : null}
+          {hideTitle ? null : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             {leading}
             <View style={{ flex: 1, gap: 2 }}>
@@ -137,6 +141,7 @@ export function HeroScreen({
                 ) : null)}
             </View>
           </View>
+          )}
         </View>
       </View>
 
@@ -171,10 +176,13 @@ export function SummaryCard({
   children,
   tone = 'dark',
   style,
+  background,
 }: {
   children: ReactNode;
   tone?: CardTone;
   style?: ComponentProps<typeof View>['style'];
+  /** A light card in another colour than coral (a group's own colour). Keep it light: the text is dark. */
+  background?: string;
 }) {
   return (
     <CardToneContext.Provider value={tone}>
@@ -182,7 +190,7 @@ export function SummaryCard({
         style={[
           {
             marginHorizontal: space.lg,
-            backgroundColor: tone === 'dark' ? brand.deep : brand.coral,
+            backgroundColor: background ?? (tone === 'dark' ? brand.deep : brand.coral),
             borderRadius: radius.xl,
             paddingVertical: space.lg,
             paddingHorizontal: space.xl,

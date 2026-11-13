@@ -3,6 +3,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import Animated, { ZoomIn } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Gutter, HeroScreen } from '@/components/dashboard';
 import { Bouncy, buzz, Confetti, MoneyFlow, SlideToConfirm } from '@/components/fun';
@@ -39,6 +40,7 @@ function AmountChip({ label, selected, onPress }: { label: string; selected: boo
  */
 export default function SettleScreen() {
   const c = useColors();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     groupId?: string;
     from?: string;
@@ -143,7 +145,7 @@ export default function SettleScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, gap: space.md }}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, paddingTop: insets.top + space.xl, gap: space.md }}>
           <Animated.View
             entering={ZoomIn.springify().damping(12)}
             style={{ width: 112, height: 112, borderRadius: 56, backgroundColor: c.warm, alignItems: 'center', justifyContent: 'center' }}>
@@ -165,7 +167,8 @@ export default function SettleScreen() {
             Recorded wrong? You can undo it from Activity.
           </Text>
         </View>
-        <View style={{ padding: space.lg, paddingBottom: space.xxl }}>
+        {/* Clear the phone's navigation bar (and the status bar up top, on the view above). */}
+        <View style={{ padding: space.lg, paddingBottom: insets.bottom + space.lg }}>
           <Button label="Done" onPress={() => router.back()} />
         </View>
         <Confetti fire={confetti} />

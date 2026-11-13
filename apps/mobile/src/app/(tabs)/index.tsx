@@ -3,7 +3,7 @@ import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { TallyMark } from '@/components/brand';
 import { NotificationBell } from '@/components/notification-bell';
@@ -23,21 +23,35 @@ import { brand, radius, space, useColors } from '@/theme';
 /**
  * Home's collapsible "To settle": who you owe and who owes you, across groups, biggest first.
  * Starts closed (header and count only); tap the header to open the cards.
+ *
+ * The cards stay rendered and the section's height animates between 0 and their measured height,
+ * so the page below slides instead of jumping when it opens or closes.
  */
 function ToSettle({ items }: { items: ReturnType<typeof myTransfers> }) {
   const c = useColors();
+  const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
+  const progress = useSharedValue(0);
+  const contentHeight = useSharedValue(0);
+  const drawer = useAnimatedStyle(() => ({
+    height: progress.get() * contentHeight.get(),
+    opacity: progress.get(),
+  }));
+  const toggle = () => {
+    buzz.tap();
+    const next = !open;
+    setOpen(next);
+    progress.set(withTiming(next ? 1 : 0, { duration: reduce ? 0 : 280, easing: Easing.out(Easing.cubic) }));
+  };
   return (
     <Gutter>
+      <View>
       <Bouncy
         scaleTo={0.98}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={`To settle, ${items.length} ${items.length === 1 ? 'item' : 'items'}. ${open ? 'Collapse' : 'Expand'}`}
-        onPress={() => {
-          buzz.tap();
-          setOpen((o) => !o);
-        }}
+        onPress={toggle}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
@@ -60,19 +74,23 @@ function ToSettle({ items }: { items: ReturnType<typeof myTransfers> }) {
         <MaterialIcons name={open ? 'expand-less' : 'expand-more'} size={26} color={c.textMuted} />
       </Bouncy>
 
-      {open ? (
-        items.length === 0 ? (
-          <Animated.View entering={FadeInDown.duration(220)}>
+      <Animated.View
+        style={[{ overflow: 'hidden' }, drawer]}
+        pointerEvents={open ? 'auto' : 'none'}
+        accessibilityElementsHidden={!open}
+        importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}>
+        {/* Measured at its natural height, whatever the drawer's current height. */}
+        <View
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: space.md, gap: space.md }}
+          onLayout={(e) => contentHeight.set(e.nativeEvent.layout.height)}>
+          {items.length === 0 ? (
             <AllSquareCard />
-          </Animated.View>
-        ) : (
-          items.map((t, i) => (
-            <Animated.View key={`${t.group.id}-${t.other}-${t.iOwe}`} entering={FadeInDown.delay(i * 40).duration(220)}>
-              <YouCard {...t} showGroup />
-            </Animated.View>
-          ))
-        )
-      ) : null}
+          ) : (
+            items.map((t) => <YouCard key={`${t.group.id}-${t.other}-${t.iOwe}`} {...t} showGroup />)
+          )}
+        </View>
+      </Animated.View>
+      </View>
     </Gutter>
   );
 }

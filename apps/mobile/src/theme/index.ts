@@ -89,6 +89,14 @@ export function groupColor(id: string): string {
   return GROUP_COLORS[h % GROUP_COLORS.length]!;
 }
 
+/** A light shade of a group's colour that dark text reads well on: the background of its cards. */
+export function groupTint(id: string): string {
+  const n = Number.parseInt(groupColor(id).slice(1), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * 0.4);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(mix);
+  return `#${((1 << 24) | (r! << 16) | (g! << 8) | b!).toString(16).slice(1)}`;
+}
+
 export type Colors = { [K in keyof (typeof palette)['light']]: string };
 
 /**

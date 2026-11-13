@@ -67,7 +67,7 @@ export function Avatar({ name, size = 40, color, square }: { name: string; size?
   );
 }
 
-type ButtonKind = 'primary' | 'secondary' | 'accent' | 'outlineLight';
+type ButtonKind = 'primary' | 'secondary' | 'accent' | 'outlineLight' | 'danger';
 
 export function Button({
   label,
@@ -90,6 +90,8 @@ export function Button({
   const styles: Record<ButtonKind, { bg: string; fg: string; border?: string }> = {
     primary: { bg: c.primary, fg: c.onPrimary },
     secondary: { bg: c.surfaceAlt, fg: c.text },
+    /** A destructive action that isn't the main one (e.g. Remove from group): soft, with red text. */
+    danger: { bg: c.surfaceAlt, fg: c.danger },
     accent: { bg: brand.accent, fg: brand.onAccent },
     outlineLight: {
       bg: 'transparent',

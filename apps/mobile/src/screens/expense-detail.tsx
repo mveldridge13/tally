@@ -1,4 +1,4 @@
-import { centsToDecimalString, formatMoney, itemsSubtotal } from '@tally/shared';
+import { centsToDecimalString, formatMoney, inferItemsRest, itemsSubtotal } from '@tally/shared';
 import { router } from 'expo-router';
 import { Alert, View } from 'react-native';
 
@@ -157,9 +157,14 @@ export function ExpenseDetail({ id, embedded = false, onGone }: { id: string; em
                   <Divider />
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
                     <View style={{ flex: 1, gap: 2 }}>
-                      <Text variant="heading">Tax, tip & extras</Text>
+                      <Text variant="heading">Everything else</Text>
                       <Text variant="caption" muted>
-                        Shared in proportion to what each person had
+                        {(() => {
+                          const rest = inferItemsRest(expense.amount, expense.items, expense.splits);
+                          return rest.rest === 'equal'
+                            ? `Split equally between ${rest.participants.map(name).join(', ')}`
+                            : 'Shared in proportion to what each person had';
+                        })()}
                       </Text>
                     </View>
                     <Text variant="heading" style={{ fontVariant: ['tabular-nums'] }}>

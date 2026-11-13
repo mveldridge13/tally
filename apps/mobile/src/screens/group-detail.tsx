@@ -6,8 +6,8 @@ import { Alert, Pressable, ScrollView, View } from 'react-native';
 
 import { ContactNameField, type ContactReach } from '@/components/contact-name-field';
 import { Gutter, HeaderMenuButton, HeroScreen, SectionTitle } from '@/components/dashboard';
-import { balanceSentence, FloatingButton, GROUP_ICONS, GroupIcon, MenuRow, Sheet } from '@/components/friendly';
-import { CountUp } from '@/components/fun';
+import { balanceSentence, FloatingButton, GROUP_ICONS, MenuRow, Sheet } from '@/components/friendly';
+import { GroupCard } from '@/components/group-card';
 import { GroupFeed, OweWeb, Segmented } from '@/components/group-visuals';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
@@ -197,20 +197,13 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
         variant={embedded ? 'card' : 'full'}
         nav={embedded ? 'none' : 'back'}
         title={group.name}
-        subtitleNode={
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <CountUp
-              cents={summary.totalSpent ?? 0}
-              currency={group.currency}
-              style={{ color: c.textMuted, fontWeight: '600', fontVariant: ['tabular-nums'] }}
-            />
-            <Text muted> spent · your share {formatMoney(summary.myShare, group.currency)}</Text>
-          </View>
-        }
-        leading={<GroupIcon group={group} size={52} />}
+        hideTitle
         right={<HeaderMenuButton onPress={() => setSheet('menu')} />}
         refreshing={pull.refreshing}
         onRefresh={pull.onRefresh}>
+        {/* The group's card: its colour, icon, people and what's been spent. */}
+        <GroupCard group={group} totalSpent={summary.totalSpent} myShare={summary.myShare} onIconPress={() => setSheet('icon')} />
+
         {inviteError ? (
           <Gutter>
             <Notice>{inviteError}</Notice>

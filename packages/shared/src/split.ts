@@ -10,7 +10,14 @@ export type SplitInput =
   | { method: 'exact'; shares: { userId: UserId; amount: Cents }[] }
   | { method: 'percentage'; shares: { userId: UserId; basisPoints: number }[] }
   | { method: 'shares'; shares: { userId: UserId; units: number }[] }
-  | { method: 'items'; items: SplitItem[] }
+  | {
+      method: 'items';
+      items: SplitItem[];
+      /** How anything not covered by the items is shared. Defaults to 'proportional'. */
+      rest?: ItemsRest;
+      /** Who shares the rest when it's split equally. */
+      participants?: UserId[];
+    }
   | { method: 'adjustment'; shares: { userId: UserId; adjustment: Cents }[] };
 
 /**
@@ -21,6 +28,12 @@ export interface SplitItem {
   amount: Cents;
   userIds: UserId[];
 }
+
+/**
+ * What happens to the part of the bill the items don't cover: split equally between the
+ * chosen people, or shared in proportion to what each person's items cost (tax and tip).
+ */
+export type ItemsRest = 'equal' | 'proportional';
 
 export type SplitMethod = SplitInput['method'];
 
@@ -133,7 +146,7 @@ export function computeSplit(total: Cents, input: SplitInput): SplitShare[] {
     }
 
     case 'items':
-      return splitByItems(total, input.items);
+      return splitByItems(total, input.items, input.rest, input.participants);
 
     case 'adjustment':
       return splitWithAdjustments(total, input.shares);
@@ -182,12 +195,20 @@ export function adjustmentsTotal(shares: { adjustment: Cents }[]): Cents {
 
 /**
  * Split by item. Each item's price is shared equally by the people who had it. Anything the
- * total has on top of the items (tax, tip, service charge) is shared in proportion to what each
- * person's items cost, so someone who ordered more pays more of the tip.
+ * total has on top of the items is "everything else":
+ * - 'proportional' (tax, tip, service charge): shared in proportion to what each person's items
+ *   cost, so someone who ordered more pays more of the tip.
+ * - 'equal': split equally between `participants`, e.g. a shared meal where one person also
+ *   had a $15 cocktail.
  *
- * People are listed in the order they first appear in the items.
+ * People are listed in the order they first appear in the items, then any other participants.
  */
-export function splitByItems(total: Cents, items: SplitItem[]): SplitShare[] {
+export function splitByItems(
+  total: Cents,
+  items: SplitItem[],
+  rest: ItemsRest = 'proportional',
+  participants: UserId[] = [],
+): SplitShare[] {
   if (items.length === 0) {
     throw new SplitError('NO_ITEMS', 'Add at least one item');
   }
@@ -218,6 +239,21 @@ export function splitByItems(total: Cents, items: SplitItem[]): SplitShare[] {
     );
   }
 
+  if (rest === 'equal' && extra > 0) {
+    if (participants.length === 0) {
+      throw new SplitError('NO_PARTICIPANTS', 'Choose who shares everything else');
+    }
+    const ids = uniqueIds(participants);
+    for (const id of ids) if (!subtotals.has(id)) subtotals.set(id, 0);
+    for (const share of allocateByWeights(
+      extra,
+      ids.map((userId) => ({ userId, weight: 1 })),
+    )) {
+      subtotals.set(share.userId, subtotals.get(share.userId)! + share.amount);
+    }
+    return [...subtotals.entries()].map(([userId, amount]) => ({ userId, amount }));
+  }
+
   const people = [...subtotals.entries()].map(([userId, amount]) => ({ userId, amount }));
   if (extra === 0) return people;
   const extras = allocateByWeights(
@@ -225,6 +261,31 @@ export function splitByItems(total: Cents, items: SplitItem[]): SplitShare[] {
     people.map((p) => ({ userId: p.userId, weight: p.amount })),
   );
   return people.map((p, i) => ({ userId: p.userId, amount: p.amount + extras[i]!.amount }));
+}
+
+/**
+ * How a saved items split shared everything else, and between whom. Only the items and the
+ * resulting shares are stored, so this takes everyone who pays more than their own items as
+ * sharing the rest, re-runs the split equally between them and checks it matches.
+ */
+export function inferItemsRest(
+  total: Cents,
+  items: SplitItem[],
+  shares: SplitShare[],
+): { rest: ItemsRest; participants: UserId[] } {
+  const all = shares.map((s) => s.userId);
+  try {
+    const own = new Map(splitByItems(itemsSubtotal(items), items).map((s) => [s.userId, s.amount]));
+    const participants = shares.filter((s) => s.amount > (own.get(s.userId) ?? 0)).map((s) => s.userId);
+    const equal = splitByItems(total, items, 'equal', participants);
+    const saved = new Map(shares.map((s) => [s.userId, s.amount]));
+    if (equal.length === shares.length && equal.every((s) => saved.get(s.userId) === s.amount)) {
+      return { rest: 'equal', participants: participants.length ? participants : all };
+    }
+  } catch {
+    // Not an equal split.
+  }
+  return { rest: 'proportional', participants: all };
 }
 
 /** What the items add up to, before tax, tip and other extras. */

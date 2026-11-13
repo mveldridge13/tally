@@ -4,7 +4,7 @@
  */
 import { formatMoney } from '@tally/shared';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
@@ -122,8 +122,24 @@ function dayLabel(iso: string): string {
   });
 }
 
-/** One expense or payment as a chat bubble. `showGroup` (Activity) adds which group it's from. */
-export function Bubble({ item, currency: given, showGroup }: { item: ActivityItem; currency?: string; showGroup?: boolean }) {
+/** What a bubble shows on its right, when a screen wants something other than your share. */
+export type BubbleFigure = { big: string; small?: string; color?: string };
+
+/**
+ * One expense or payment as a chat bubble. `showGroup` (Activity) adds which group it's from;
+ * `figure` replaces "your share" on the right (e.g. what it adds between you and one person).
+ */
+export function Bubble({
+  item,
+  currency: given,
+  showGroup,
+  figure,
+}: {
+  item: ActivityItem;
+  currency?: string;
+  showGroup?: boolean;
+  figure?: BubbleFigure;
+}) {
   const c = useColors();
   const myId = useMyId();
   const name = useNameOf();
@@ -152,6 +168,7 @@ export function Bubble({ item, currency: given, showGroup }: { item: ActivityIte
     right = { big: money(item.amount) };
   }
   if (showGroup && group) line = `${line} · ${group.icon ? `${group.icon} ` : ''}${group.name}`;
+  if (figure) right = figure;
 
   return (
     <View style={{ flexDirection: mine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: space.sm }}>
@@ -184,7 +201,7 @@ export function Bubble({ item, currency: given, showGroup }: { item: ActivityIte
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text variant="label" style={{ fontVariant: ['tabular-nums'], fontWeight: '700' }}>
+          <Text variant="label" color={figure?.color} style={{ fontVariant: ['tabular-nums'], fontWeight: '700' }}>
             {right.big}
           </Text>
           {right.small ? (
@@ -211,6 +228,11 @@ export function GroupFeed({ groupId, currency, emptyText }: { groupId: string; c
       </Card>
     );
   }
+  return <BubbleDays items={items} render={(item) => <Bubble key={item.id} item={item} currency={currency} />} />;
+}
+
+/** Bubbles under day headings ("Today", "Yesterday", "Mon 8 Nov"), newest first as given. */
+export function BubbleDays({ items, render }: { items: ActivityItem[]; render: (item: ActivityItem) => ReactNode }) {
   const days: { label: string; items: ActivityItem[] }[] = [];
   for (const item of items) {
     const label = dayLabel(item.at);
@@ -225,9 +247,7 @@ export function GroupFeed({ groupId, currency, emptyText }: { groupId: string; c
           <Text variant="caption" muted style={{ fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase', marginTop: space.xs }}>
             {d.label}
           </Text>
-          {d.items.map((item) => (
-            <Bubble key={item.id} item={item} currency={currency} />
-          ))}
+          {d.items.map(render)}
         </View>
       ))}
     </View>

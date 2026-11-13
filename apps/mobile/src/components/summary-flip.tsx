@@ -5,7 +5,7 @@
  */
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { formatMoney, type Cents } from '@tally/shared';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, { Easing, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, G } from 'react-native-svg';
@@ -130,7 +130,9 @@ function GroupTypesBack({ slices }: { slices: Slice[] }) {
 }
 
 /** Small corner hint that the card turns over. */
-function FlipHint({ icon }: { icon: 'donut-small' | 'sync' }) {
+type IconName = ComponentProps<typeof MaterialIcons>['name'];
+
+function FlipHint({ icon }: { icon: IconName }) {
   const ink = useCardInk();
   return (
     <View style={{ position: 'absolute', top: space.lg, right: space.lg }}>
@@ -139,10 +141,28 @@ function FlipHint({ icon }: { icon: 'donut-small' | 'sync' }) {
   );
 }
 
-/** The light summary card, which flips to the group-type donut when tapped. */
-export function FlippingSummaryCard({ front, groups }: { front: ReactNode; groups: MonthGroup[] }) {
+/**
+ * A light summary card that turns over when tapped. Both faces take the taller one's height.
+ * Buttons on the front (e.g. a group's icon) still work: the front only stops taking touches
+ * while it's turned away.
+ */
+export function FlipCard({
+  front,
+  back,
+  frontHint,
+  frontLabel,
+  backLabel,
+  background,
+}: {
+  front: ReactNode;
+  back: ReactNode;
+  /** Icon in the corner of the front, hinting at what's on the back. */
+  frontHint: IconName;
+  frontLabel: string;
+  backLabel: string;
+  background?: string;
+}) {
   const reduce = useReducedMotion();
-  const slices = useMemo(() => groupTypeSlices(groups), [groups]);
   const [flipped, setFlipped] = useState(false);
   const [frontH, setFrontH] = useState(0);
   const [backH, setBackH] = useState(0);
@@ -167,18 +187,11 @@ export function FlippingSummaryCard({ front, groups }: { front: ReactNode; group
   const tall = Math.max(frontH, backH) || undefined;
 
   return (
-    <Pressable
-      onPress={toggle}
-      accessibilityRole="button"
-      accessibilityLabel={
-        flipped
-          ? 'Your groups by type this month. Tap to see your total position.'
-          : 'Your total position. Tap to see your groups by type this month.'
-      }>
-      <Animated.View style={[{ backfaceVisibility: 'hidden' }, frontStyle]} pointerEvents="none">
-        <View onLayout={(e) => setFrontH(e.nativeEvent.layout.height)}>
-          <SummaryCard tone="light" style={{ minHeight: tall }}>
-            <FlipHint icon="donut-small" />
+    <Pressable onPress={toggle} accessibilityRole="button" accessibilityLabel={flipped ? backLabel : frontLabel}>
+      <Animated.View style={[{ backfaceVisibility: 'hidden' }, frontStyle]} pointerEvents={flipped ? 'none' : 'box-none'}>
+        <View onLayout={(e) => setFrontH(e.nativeEvent.layout.height)} pointerEvents="box-none">
+          <SummaryCard tone="light" background={background} style={{ minHeight: tall }}>
+            <FlipHint icon={frontHint} />
             {front}
           </SummaryCard>
         </View>
@@ -187,12 +200,26 @@ export function FlippingSummaryCard({ front, groups }: { front: ReactNode; group
         style={[{ position: 'absolute', top: 0, left: 0, right: 0, backfaceVisibility: 'hidden' }, backStyle]}
         pointerEvents="none">
         <View onLayout={(e) => setBackH(e.nativeEvent.layout.height)}>
-          <SummaryCard tone="light" style={{ minHeight: tall }}>
+          <SummaryCard tone="light" background={background} style={{ minHeight: tall }}>
             <FlipHint icon="sync" />
-            <GroupTypesBack slices={slices} />
+            {back}
           </SummaryCard>
         </View>
       </Animated.View>
     </Pressable>
+  );
+}
+
+/** The light summary card, which flips to the group-type donut when tapped. */
+export function FlippingSummaryCard({ front, groups }: { front: ReactNode; groups: MonthGroup[] }) {
+  const slices = useMemo(() => groupTypeSlices(groups), [groups]);
+  return (
+    <FlipCard
+      front={front}
+      back={<GroupTypesBack slices={slices} />}
+      frontHint="donut-small"
+      frontLabel="Your total position. Tap to see your groups by type this month."
+      backLabel="Your groups by type this month. Tap to see your total position."
+    />
   );
 }
