@@ -27,6 +27,18 @@ function svg({ size, bg, bar = SKY, slash = SLASH, scale = 1 }) {
   }<g transform="translate(${t} ${t}) scale(${scale})" fill="none" stroke-linecap="round">${paths}</g></svg>`;
 }
 
+// Splash: the mark with the wordmark "tally." underneath, both cream, on a transparent square
+// (the purple background comes from app.json). Mirrors the Wordmark in brand.tsx.
+function splashSvg(size) {
+  const paths = [...STROKES.map((s) => ({ ...s, c: SKY })), { ...SLASH_PATH, c: SLASH }]
+    .map((p) => `<path d="${p.d}" stroke="${p.c}" stroke-width="${p.w}"/>`)
+    .join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">` +
+    `<g transform="translate(22 6) scale(0.56)" fill="none" stroke-linecap="round">${paths}</g>` +
+    `<text x="50" y="86" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800" ` +
+    `font-size="21" letter-spacing="-0.6" fill="${SKY}">tally.</text></svg>`;
+}
+
 const out = join(dirname(fileURLToPath(import.meta.url)), '../apps/mobile/assets/images');
 const write = (file, opts) => {
   writeFileSync(join(out, file), new Resvg(svg(opts)).render().asPng());
@@ -39,6 +51,7 @@ write('icon.png', { size: 1024, bg: NAVY, scale: 0.78 });
 write('android-icon-foreground.png', { size: 1024, scale: 0.6 });
 write('android-icon-background.png', { size: 1024, bg: NAVY, scale: 0, bar: NAVY, slash: NAVY });
 write('android-icon-monochrome.png', { size: 1024, scale: 0.6, bar: '#FFFFFF', slash: '#FFFFFF' });
-// Splash: transparent mark, centred on the navy splash background from app.json.
-write('splash-icon.png', { size: 1024 });
+// Splash: the mark and "tally.", centred on the purple splash background from app.json.
+writeFileSync(join(out, 'splash-icon.png'), new Resvg(splashSvg(1024), { font: { loadSystemFonts: true } }).render().asPng());
+console.log('wrote splash-icon.png');
 write('favicon.png', { size: 196, bg: NAVY, scale: 0.85 });
