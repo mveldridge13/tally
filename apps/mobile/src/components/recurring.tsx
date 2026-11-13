@@ -13,8 +13,9 @@ import { Pressable, Switch, View } from 'react-native';
 
 import { Bouncy, buzz, expenseEmoji } from '@/components/fun';
 import { Button, Card, Chip, Divider, Text } from '@/components/ui';
-import { HEADS_UP_DAYS, type Frequency, type RecurringDue } from '@/lib/data';
-import { brand, radius, space, useColors } from '@/theme';
+import { useMyId } from '@/lib/auth';
+import { HEADS_UP_DAYS, useNameOf, useRecurring, type Frequency, type RecurringDue } from '@/lib/data';
+import { brand, groupColor, radius, space, useColors } from '@/theme';
 
 export interface RecurringForm {
   /** Off = an ordinary one-off expense. */
@@ -374,11 +375,9 @@ export function RecurringPanel({
 
       {form.on ? (
         <Card style={{ paddingVertical: 0 }}>
-          {editingSchedule
-            ? null
-            : row(
+          {row(
                 'start',
-                'Starts',
+                editingSchedule ? 'Next one' : 'Starts',
                 form.start === todayDate() ? 'Today' : shortDate(form.start),
                 <>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
@@ -392,7 +391,7 @@ export function RecurringPanel({
                   />
                 </>,
               )}
-          {editingSchedule ? null : <Divider />}
+          <Divider />
           {row(
             'ends',
             'Ends',
@@ -504,6 +503,94 @@ export function DueBillCard({ bill, group }: { bill: RecurringDue; group?: { nam
         label="Add amount"
         onPress={() => router.push({ pathname: '/add-expense', params: { dueId: bill.id, groupId: bill.groupId } })}
       />
+    </View>
+  );
+}
+
+/**
+ * The group page's Recurring section: what the group shares on a schedule (rent, bills, subscriptions),
+ * shown before anything is due. One full-width line each, in its own colour, then ＋ New recurring expense.
+ * Nothing is shown when the group has none.
+ */
+export function GroupRecurringRow({ groupId, currency }: { groupId: string; currency: string }) {
+  const c = useColors();
+  const myId = useMyId();
+  const name = useNameOf();
+  const { data: list } = useRecurring(groupId);
+  if (list.length === 0) return null;
+  return (
+    <View style={{ gap: space.md }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.lg }}>
+        <Text variant="heading" style={{ fontSize: 19, fontWeight: '700' }}>
+          Recurring
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: '/recurring/[groupId]', params: { groupId } })}
+          hitSlop={10}>
+          <Text variant="label" color={c.focus}>
+            See all
+          </Text>
+        </Pressable>
+      </View>
+      <View style={{ paddingHorizontal: space.lg, gap: space.sm + 2 }}>
+        {list.map((r) => (
+          <Bouncy
+            key={r.id}
+            scaleTo={0.98}
+            accessibilityRole="button"
+            accessibilityLabel={`${r.description}, ${r.variable ? 'amount changes' : formatMoney(r.amount ?? 0, currency)} ${FREQUENCY_LABEL[r.frequency].toLowerCase()}${r.paused ? ', paused' : `, next ${shortDate(r.nextDate)}`}`}
+            onPress={() => router.push({ pathname: '/recurring-expense/[id]', params: { id: r.id, groupId } })}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space.md,
+              padding: space.md + 2,
+              borderRadius: radius.lg + 2,
+              backgroundColor: wash(groupColor(r.id), 0.78),
+            }}>
+            <View
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 16,
+                backgroundColor: 'rgba(255,255,255,0.7)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: [{ rotate: '-6deg' }],
+                opacity: r.paused ? 0.6 : 1,
+              }}>
+              <Text style={{ fontSize: 24 }}>{expenseEmoji(r.description)}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.sm }}>
+                <Text style={{ flex: 1, fontSize: 17, fontWeight: '800', color: brand.onCoral }} numberOfLines={1}>
+                  {r.description}
+                </Text>
+                <Text style={{ fontSize: 17, fontWeight: '800', color: brand.onCoral, fontVariant: ['tabular-nums'] }}>
+                  {r.variable ? 'Changes' : formatMoney(r.amount ?? 0, currency)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: space.sm }}>
+                <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#4A3F52' }} numberOfLines={1}>
+                  {FREQUENCY_LABEL[r.frequency]} · {r.payerId === myId ? 'you pay' : `${name(r.payerId)} pays`}
+                </Text>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#4A3F52' }} numberOfLines={1}>
+                  {r.paused ? '⏸ Paused' : r.dueDate ? '⚡ Needs amount' : `${shortDate(r.nextDate)} · ${whenText(r.nextDate)}`}
+                </Text>
+              </View>
+            </View>
+          </Bouncy>
+        ))}
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: '/add-expense', params: { groupId, recurring: '1' } })}
+          style={{ alignItems: 'center', padding: space.md + 2, borderRadius: radius.lg + 2, borderWidth: 1.5, borderStyle: 'dashed', borderColor: c.border }}>
+          <Text variant="label" color={c.focus} style={{ fontWeight: '700' }}>
+            ＋ New recurring expense
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

@@ -8,7 +8,7 @@ import { ContactNameField, type ContactReach } from '@/components/contact-name-f
 import { Gutter, HeaderMenuButton, HeroScreen, SectionTitle } from '@/components/dashboard';
 import { balanceSentence, FloatingButton, GROUP_ICONS, MenuRow, Sheet } from '@/components/friendly';
 import { GroupCard } from '@/components/group-card';
-import { DueBillCard } from '@/components/recurring';
+import { DueBillCard, GroupRecurringRow } from '@/components/recurring';
 import { GroupFeed, OweWeb, Segmented } from '@/components/group-visuals';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
@@ -321,6 +321,9 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
             </Pressable>
           </ScrollView>
         </View>
+
+        {/* What the group shares on a schedule (rent, bills), shown before anything is due. Under People. */}
+        <GroupRecurringRow groupId={group.id} currency={group.currency} />
 
         {/* Who owes whom, drawn as arrows between faces. Owners and co-owners can switch to everyone. */}
         {transfers.length > 0 ? (

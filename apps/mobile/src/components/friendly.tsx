@@ -5,7 +5,7 @@
 import { formatMoney, type Cents } from '@tally/shared';
 import { useEffect, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import { KeyboardAvoidingView, KeyboardAwareScrollView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -152,17 +152,20 @@ function SheetBody({
     paddingBottom: interpolate(keyboard.progress.get(), [0, 1], [restingPadding, space.sm]),
   }));
   const shadeStyle = useAnimatedStyle(() => ({ opacity: shade.get() }));
+  const Scroller = (fullHeight ? KeyboardAwareScrollView : ScrollView) as typeof KeyboardAwareScrollView;
 
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, justifyContent: 'flex-end' }}>
+    // A full-height panel (the split panel) stays put and lets the keyboard slide over its bottom;
+    // its list scrolls the box being typed in to just above the keyboard. Nothing resizes, so no flicker.
+    // Shorter panels move up above the keyboard instead.
+    <KeyboardAvoidingView behavior="padding" enabled={!fullHeight} style={{ flex: 1, justifyContent: 'flex-end' }}>
       <Animated.View style={[{ position: 'absolute', inset: 0 }, shadeStyle]}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(47,40,56,0.45)' }} />
       </Animated.View>
       <Animated.View
         style={[
           {
-            // A full-height panel can still shrink to fit above the keyboard.
-            ...(fullHeight ? { height: '88%', flexShrink: 1 } : { maxHeight: '88%' }),
+            ...(fullHeight ? { height: '88%' } : { maxHeight: '88%' }),
             backgroundColor: c.bg,
             borderTopLeftRadius: 32,
             borderTopRightRadius: 32,
@@ -172,7 +175,8 @@ function SheetBody({
         <View style={{ alignItems: 'center', paddingTop: space.sm + 2, paddingBottom: space.xs }}>
           <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: c.surfaceAlt }} />
         </View>
-        <ScrollView
+        <Scroller
+          {...(fullHeight ? { bottomOffset: space.xl } : {})}
           style={fullHeight ? { flex: 1 } : undefined}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -202,7 +206,7 @@ function SheetBody({
             </View>
           ) : null}
           {children}
-        </ScrollView>
+        </Scroller>
         {footer ? <View style={{ paddingHorizontal: space.lg, gap: space.sm }}>{footer}</View> : null}
       </Animated.View>
     </KeyboardAvoidingView>

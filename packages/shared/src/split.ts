@@ -115,7 +115,9 @@ export function computeSplit(total: Cents, input: SplitInput): SplitShare[] {
         }
         sum += s.basisPoints;
       }
-      if (sum !== FULL_PERCENT_BPS) {
+      // A third can't be typed exactly (33.33% × 3 = 99.99%), so totals off by rounding alone,
+      // up to 0.01% for each person after the first, are accepted; the money is still shared exactly, in proportion.
+      if (Math.abs(sum - FULL_PERCENT_BPS) > input.shares.length - 1) {
         throw new SplitError(
           'PERCENT_SUM_MISMATCH',
           `Percentages add up to ${sum / 100}% but must total 100%`,

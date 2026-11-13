@@ -185,6 +185,17 @@ describe('computeSplit', () => {
     ).toThrow(expect.objectContaining({ code: 'NO_PARTICIPANTS' }));
   });
 
+  it('accepts percentages that are only off by rounding, like 33.33% three times', () => {
+    const split = computeSplit(9000, {
+      method: 'percentage',
+      shares: ['a', 'b', 'c'].map((userId) => ({ userId, basisPoints: 3333 })),
+    });
+    expect(split.map((s) => s.amount)).toEqual([3000, 3000, 3000]);
+    expect(() =>
+      computeSplit(9000, { method: 'percentage', shares: [{ userId: 'a', basisPoints: 5000 }, { userId: 'b', basisPoints: 4000 }] }),
+    ).toThrow(expect.objectContaining({ code: 'PERCENT_SUM_MISMATCH' }));
+  });
+
   it('rejects items that are empty, unassigned or more than the total', () => {
     expect(() => computeSplit(100, { method: 'items', items: [] })).toThrow(
       expect.objectContaining({ code: 'NO_ITEMS' }),

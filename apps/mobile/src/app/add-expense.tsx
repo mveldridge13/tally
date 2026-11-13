@@ -478,7 +478,8 @@ function ExpenseForm({ schedule, dueBill }: { schedule?: RecurringExpense; dueBi
     if (typeof splitInput === 'string' || !group) return null;
     if (splitInput.method === 'percentage') {
       const left = FULL_PERCENT_BPS - splitInput.shares.reduce((a, s) => a + s.basisPoints, 0);
-      if (left === 0) return null;
+      // Off by rounding only (33.33% × 3) counts as done, the same as the split engine.
+      if (Math.abs(left) <= splitInput.shares.length - 1) return null;
       const pct = centsToDecimalString(Math.abs(left)).replace(/\.00$/, '');
       return left > 0 ? `${pct}% left to assign` : `${pct}% too much assigned`;
     }
@@ -567,7 +568,11 @@ function ExpenseForm({ schedule, dueBill }: { schedule?: RecurringExpense; dueBi
     void (async () => {
       try {
         if (schedule) {
-          await updateRecurring.mutateAsync({ ...recurringInput, id: schedule.id });
+          await updateRecurring.mutateAsync({
+            ...recurringInput,
+            id: schedule.id,
+            nextDate: recurring.start !== schedule.nextDate ? recurring.start : undefined,
+          });
         } else if (dueBill) {
           // The amount for a bill that came due: save it as a normal expense, then mark the bill done.
           const id = await createExpense.mutateAsync({ ...input, groupId: group.id });

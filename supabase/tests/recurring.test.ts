@@ -150,6 +150,25 @@ describe('Recurring expenses (Supabase)', () => {
     expect(row?.stopped_at).not.toBeNull();
   });
 
+  it('editing can move the next date; it counts on from there', async () => {
+    const { data: id } = await create(bob, { p_description: 'Water', p_start_date: plusDays(3) });
+    const edit = (next: string | null) =>
+      bob.client.rpc('update_recurring', {
+        p_id: id, p_description: 'Water', p_payer_id: bob.id, p_split_method: 'equal',
+        p_split_input: { method: 'equal', participants: [alice.id, bob.id, cara.id] }, p_variable: false,
+        p_amount_cents: 90000, p_splits: splits3(90000), p_items: null, p_frequency: 'monthly',
+        p_end_date: null, p_remaining: null, p_heads_up_days: 1, p_next_date: next,
+      });
+    expect((await edit(plusDays(10))).error).toBeNull();
+    const { data: row } = await bob.client.from('recurring_expenses').select('next_date, start_date, occurrences').eq('id', id).single();
+    expect(row).toMatchObject({ next_date: plusDays(10), start_date: plusDays(10), occurrences: 0 });
+    expect((await edit(plusDays(-5))).error?.message).toMatch(/today or later/);
+    // Leaving the date out keeps it.
+    expect((await edit(null)).error).toBeNull();
+    const { data: same } = await bob.client.from('recurring_expenses').select('next_date').eq('id', id).single();
+    expect(same?.next_date).toBe(plusDays(10));
+  });
+
   it('ends after the number of times chosen', async () => {
     const { data: id } = await create(bob, { p_description: 'Course', p_remaining: 1 });
     await runJob();

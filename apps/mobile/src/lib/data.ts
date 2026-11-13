@@ -952,9 +952,7 @@ export function useRecurringDue() {
   const query = useQuery({
     queryKey: [...TALLY_KEY, 'recurring-due', myId],
     queryFn: async (): Promise<RecurringDue[]> => {
-      const { data, error } = await (supabase.rpc as unknown as (fn: string) => Promise<{ data: unknown; error: Error | null }>)(
-        'recurring_due',
-      );
+      const { data, error } = await callRpc('recurring_due', {});
       if (error) throw error;
       return ((data ?? []) as { id: string; group_id: string; description: string; payer_id: string; split_input: unknown; frequency: string; due_date: string }[]).map(
         (r) => ({
@@ -987,7 +985,9 @@ export interface RecurringInput {
   headsUpDays: number;
 }
 
-const callRpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: Error | null }>;
+/** Calls a database function by name, kept bound to the client (calling `supabase.rpc` detached loses `this`). */
+const callRpc = (fn: string, args: Record<string, unknown>) =>
+  supabase.rpc(fn as never, args as never) as unknown as Promise<{ data: unknown; error: Error | null }>;
 
 function recurringArgs(input: RecurringInput) {
   const fixed = !input.variable && input.amount !== null;
@@ -1024,10 +1024,18 @@ export function useCreateRecurring() {
   });
 }
 
-/** Change what future ones will be; expenses already added stay as they are. */
+/**
+ * Change what future ones will be; expenses already added stay as they are. `nextDate` moves the
+ * next one (the schedule counts on from there at the same frequency).
+ */
 export function useUpdateRecurring() {
-  return useInvalidating(async (input: RecurringInput & { id: string }) => {
-    const { error } = await callRpc('update_recurring', { p_id: input.id, ...recurringArgs(input) });
+  return useInvalidating(async (input: RecurringInput & { id: string; nextDate?: string }) => {
+    // Only sent when the date was moved, so an edit that keeps the date works with any database version.
+    const { error } = await callRpc('update_recurring', {
+      p_id: input.id,
+      ...recurringArgs(input),
+      ...(input.nextDate ? { p_next_date: input.nextDate } : {}),
+    });
     if (error) throw error;
   });
 }
