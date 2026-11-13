@@ -12,6 +12,29 @@ export interface ContactReach {
 }
 
 /**
+ * Ask for contacts permission (the first time) and open the phone's contact picker.
+ * Returns the picked name and how to reach them, null if cancelled, or why it couldn't open.
+ */
+export async function pickContact(): Promise<
+  { name: string; reach: ContactReach } | null | { denied: 'ask-again' | 'settings' } | { unavailable: true }
+> {
+  try {
+    const permission = await requestPermissionsAsync();
+    if (!permission.granted) return { denied: permission.canAskAgain ? 'ask-again' : 'settings' };
+    const contact = await Contact.presentPicker();
+    if (!contact) return null; // cancelled
+    const name = ((await contact.getFullName()).trim() || ((await contact.getGivenName()) ?? '').trim()).slice(0, 60);
+    if (!name) return null;
+    // Prefer a mobile number; fall back to the first number listed.
+    const [phones, emails] = await Promise.all([contact.getPhones().catch(() => []), contact.getEmails().catch(() => [])]);
+    const mobile = phones.find((p) => /mobile|cell/i.test(p.label ?? '')) ?? phones[0];
+    return { name, reach: { phone: mobile?.number?.trim() || undefined, email: emails[0]?.address?.trim() || undefined } };
+  } catch {
+    return { unavailable: true }; // picker unavailable on this device
+  }
+}
+
+/**
  * A name field that fills itself from the phone's contacts.
  * Tapping it asks for contacts permission (the first time) and opens the system contact picker.
  * Only the picked name is saved. The contact's mobile number and email are passed to `onContact`
@@ -37,29 +60,21 @@ export function ContactNameField({
 
   async function pick() {
     setBusy(true);
-    try {
-      const permission = await requestPermissionsAsync();
-      if (!permission.granted) {
-        setDenied(permission.canAskAgain ? 'ask-again' : 'settings');
-        setTyping(true);
-        return;
-      }
-      setDenied(null);
-      const contact = await Contact.presentPicker();
-      if (!contact) return; // cancelled
-      const name = (await contact.getFullName()).trim() || ((await contact.getGivenName()) ?? '').trim();
-      if (!name) return;
-      onChange(name.slice(0, 60));
-      // Prefer a mobile number; fall back to the first number listed.
-      const [phones, emails] = await Promise.all([contact.getPhones().catch(() => []), contact.getEmails().catch(() => [])]);
-      const mobile = phones.find((p) => /mobile|cell/i.test(p.label ?? '')) ?? phones[0];
-      onContact?.({ phone: mobile?.number?.trim() || undefined, email: emails[0]?.address?.trim() || undefined });
-    } catch {
-      // Picker unavailable on this device: fall back to typing.
+    const result = await pickContact();
+    setBusy(false);
+    if (!result) return; // cancelled
+    if ('denied' in result) {
+      setDenied(result.denied);
       setTyping(true);
-    } finally {
-      setBusy(false);
+      return;
     }
+    if ('unavailable' in result) {
+      setTyping(true);
+      return;
+    }
+    setDenied(null);
+    onChange(result.name);
+    onContact?.(result.reach);
   }
 
   if (typing) {

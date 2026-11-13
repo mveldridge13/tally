@@ -24,7 +24,12 @@ const FILTER_WORDS: Record<Exclude<Filter, 'all'>, string> = {
 };
 
 /** A group where nobody owes anybody (not just you). */
-const allSquare = (s: { myBalance: number; transfers: unknown[] }) => s.myBalance === 0 && s.transfers.length === 0;
+/**
+ * Nobody owes anything AND something has been spent. A brand-new group with nothing in it yet
+ * stays in the main list instead of being filed away under All square.
+ */
+const allSquare = (s: { myBalance: number; transfers: unknown[]; myShare: number; totalSpent: number | null }) =>
+  s.myBalance === 0 && s.transfers.length === 0 && (s.myShare > 0 || (s.totalSpent ?? 0) > 0);
 
 /** A bar at the bottom of the list ("All square 4 ⌄") that opens to show its groups. Starts closed. */
 function ClosedSection({ emoji, title, count, children }: { emoji: string; title: string; count: number; children: ReactNode }) {

@@ -2,11 +2,12 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { createGroupSchema } from '@tally/shared';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, BackHandler, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, BackHandler, Linking, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import Animated, { FadeIn, FadeInDown, LinearTransition, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { pickContact } from '@/components/contact-name-field';
 import { HeroIconButton } from '@/components/dashboard';
 import { Bouncy, buzz, Confetti } from '@/components/fun';
 import { SplitPartnerSheet, useSelection } from '@/components/split-partners';
@@ -153,6 +154,28 @@ export default function NewGroupScreen() {
     setType(t);
     setName('');
     setTimeout(() => setStep(1), 320);
+  }
+
+  // "Someone new" opens the phone's contacts first; typing the name is the fallback.
+  const [contactsOff, setContactsOff] = useState<null | 'ask-again' | 'settings'>(null);
+  async function fromContacts() {
+    const result = await pickContact();
+    if (!result) return; // cancelled: leave things as they were
+    if ('denied' in result || 'unavailable' in result) {
+      setContactsOff('denied' in result ? result.denied : null);
+      setAdding(true); // type the name instead
+      return;
+    }
+    setContactsOff(null);
+    addName(result.name);
+  }
+
+  function addName(raw: string) {
+    const n = raw.trim().slice(0, 60);
+    if (n && !newPeople.some((x) => x.toLowerCase() === n.toLowerCase())) {
+      buzz.tap();
+      setNewPeople((list) => [...list, n]);
+    }
   }
 
   function addNew() {
@@ -377,7 +400,7 @@ export default function NewGroupScreen() {
             </View>
           ))}
           <View style={{ width: '25%', alignItems: 'center' }}>
-            <Bouncy accessibilityRole="button" accessibilityLabel="Add someone new" onPress={() => setAdding(true)}>
+            <Bouncy accessibilityRole="button" accessibilityLabel="Add someone new from your contacts" onPress={() => void fromContacts()}>
               <View style={{ alignItems: 'center', gap: 6, width: 76 }}>
                 <View
                   style={{
@@ -442,6 +465,28 @@ export default function NewGroupScreen() {
             <Button size="small" label="Add" onPress={addNew} disabled={!newName.trim()} />
           </Animated.View>
         ) : null}
+        {adding ? (
+          <View style={{ gap: space.sm }}>
+            {contactsOff === 'settings' ? (
+              <Notice tone="info">Contacts access is turned off for Tally. Type the name, or turn it on in Settings to pick from your contacts.</Notice>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => (contactsOff === 'settings' ? Linking.openSettings() : void fromContacts())}
+              hitSlop={8}
+              style={{ alignSelf: 'flex-start' }}>
+              <Text variant="label" color={c.focus}>
+                {contactsOff === 'settings' ? 'Open Settings' : 'Pick from contacts'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable accessibilityRole="button" onPress={() => setAdding(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
+            <Text variant="label" color={c.textMuted}>
+              Or type a name
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
     );
     footer = (
