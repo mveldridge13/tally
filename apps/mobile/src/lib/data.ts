@@ -744,7 +744,14 @@ export interface AppNotification {
     | 'payment_to_confirm'
     | 'payment_confirmed'
     | 'payment_declined'
-    | 'confirm_reminder';
+    | 'confirm_reminder'
+    | 'recurring_heads_up'
+    | 'recurring_added'
+    | 'recurring_due'
+    | 'recurring_due_reminder';
+  /** Recurring notifications: which recurring expense, and its name. */
+  recurringId: string | null;
+  recurringDescription: string | null;
   /** Payment notifications: the payment, and where it stands now (pending, recorded, declined, voided). */
   settlementId: string | null;
   settlementStatus: string | null;
@@ -774,6 +781,8 @@ export function useNotifications() {
         read: n.read_at !== null,
         settlementId: n.settlement_id,
         settlementStatus: n.settlement_status,
+        recurringId: (n as { recurring_id?: string | null }).recurring_id ?? null,
+        recurringDescription: (n as { recurring_description?: string | null }).recurring_description ?? null,
       }));
     },
     enabled: !!myId,
@@ -815,4 +824,230 @@ export function useRemindToSettle() {
     const { error } = await supabase.rpc('remind_to_settle', { p_group_id: input.groupId, p_user_id: input.userId });
     if (error) throw error;
   });
+}
+
+// ─── Recurring expenses ──────────────────────────────────────────────────────
+
+export type Frequency = 'weekly' | 'fortnightly' | 'monthly' | 'quarterly' | 'yearly';
+export const FREQUENCIES: Frequency[] = ['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly'];
+/** Heads-up choices: days before the date. */
+export const HEADS_UP_DAYS = [0, 1, 3, 7] as const;
+
+/** A recurring expense: what it adds, how often, and where it's up to. Kept apart from the expenses it adds. */
+export interface RecurringExpense {
+  id: string;
+  groupId: string;
+  createdById: string;
+  description: string;
+  payerId: string;
+  /** The split as it was entered, so the form opens filled in. */
+  split: SplitInput;
+  /** Amount changes each time: Tally asks for it on the day. */
+  variable: boolean;
+  /** Fixed amount only. */
+  amount: Cents | null;
+  frequency: Frequency;
+  startDate: string;
+  nextDate: string;
+  endDate: string | null;
+  remaining: number | null;
+  headsUpDays: number;
+  /** Variable only: the date still waiting for its amount. */
+  dueDate: string | null;
+  paused: boolean;
+  createdAt: string;
+}
+
+type RecurringRow = {
+  id: string;
+  group_id: string;
+  created_by: string;
+  description: string;
+  payer_id: string;
+  split_input: unknown;
+  variable: boolean;
+  amount_cents: number | null;
+  frequency: string;
+  start_date: string;
+  next_date: string;
+  end_date: string | null;
+  remaining: number | null;
+  heads_up_days: number;
+  due_date: string | null;
+  paused: boolean;
+  created_at: string;
+};
+
+const fromRecurringRow = (r: RecurringRow): RecurringExpense => ({
+  id: r.id,
+  groupId: r.group_id,
+  createdById: r.created_by,
+  description: r.description,
+  payerId: r.payer_id,
+  split: r.split_input as SplitInput,
+  variable: r.variable,
+  amount: r.amount_cents,
+  frequency: r.frequency as Frequency,
+  startDate: r.start_date,
+  nextDate: r.next_date,
+  endDate: r.end_date,
+  remaining: r.remaining,
+  headsUpDays: r.heads_up_days,
+  dueDate: r.due_date,
+  paused: r.paused,
+  createdAt: r.created_at,
+});
+
+const RECURRING_COLUMNS =
+  'id, group_id, created_by, description, payer_id, split_input, variable, amount_cents, frequency, start_date, next_date, end_date, remaining, heads_up_days, due_date, paused, created_at';
+
+/**
+ * A group's active recurring expenses (not stopped). Owners and co-owners see all of them;
+ * members see the ones they set up.
+ */
+export function useRecurring(groupId: string) {
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'recurring', groupId],
+    queryFn: async (): Promise<RecurringExpense[]> => {
+      const { data, error } = await (supabase.from('recurring_expenses' as never) as unknown as ReturnType<typeof supabase.from>)
+        .select(RECURRING_COLUMNS)
+        .eq('group_id', groupId)
+        .is('stopped_at', null)
+        .order('created_at');
+      if (error) throw error;
+      return ((data ?? []) as unknown as RecurringRow[]).map(fromRecurringRow);
+    },
+  });
+  return { ...query, data: query.data ?? [] };
+}
+
+/** The expenses one recurring expense has added, newest first (only ones you can see). */
+export function useRecurringHistory(recurringId: string) {
+  const { data } = useTallyData();
+  const ids = useQuery({
+    queryKey: [...TALLY_KEY, 'recurring-history', recurringId],
+    queryFn: async (): Promise<string[]> => {
+      const { data: rows, error } = await supabase.from('expenses').select('id').eq('recurring_id' as never, recurringId as never);
+      if (error) throw error;
+      return (rows ?? []).map((r) => r.id);
+    },
+  });
+  const set = new Set(ids.data ?? []);
+  return data.expenses.filter((e) => set.has(e.id)).sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
+}
+
+/** Bills with an amount that changes each time, due and waiting for someone to enter it. */
+export interface RecurringDue {
+  id: string;
+  groupId: string;
+  description: string;
+  payerId: string;
+  split: SplitInput;
+  frequency: Frequency;
+  dueDate: string;
+}
+
+export function useRecurringDue() {
+  const myId = useMyId();
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'recurring-due', myId],
+    queryFn: async (): Promise<RecurringDue[]> => {
+      const { data, error } = await (supabase.rpc as unknown as (fn: string) => Promise<{ data: unknown; error: Error | null }>)(
+        'recurring_due',
+      );
+      if (error) throw error;
+      return ((data ?? []) as { id: string; group_id: string; description: string; payer_id: string; split_input: unknown; frequency: string; due_date: string }[]).map(
+        (r) => ({
+          id: r.id,
+          groupId: r.group_id,
+          description: r.description,
+          payerId: r.payer_id,
+          split: r.split_input as SplitInput,
+          frequency: r.frequency as Frequency,
+          dueDate: r.due_date,
+        }),
+      );
+    },
+    enabled: !!myId,
+  });
+  return { ...query, data: query.data ?? [] };
+}
+
+/** What a recurring expense is set to do, as entered on the form. */
+export interface RecurringInput {
+  description: string;
+  payerId: string;
+  split: SplitInput;
+  variable: boolean;
+  /** Needed for a fixed amount; ignored when it changes each time. */
+  amount: Cents | null;
+  frequency: Frequency;
+  endDate: string | null;
+  remaining: number | null;
+  headsUpDays: number;
+}
+
+const callRpc = supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: Error | null }>;
+
+function recurringArgs(input: RecurringInput) {
+  const fixed = !input.variable && input.amount !== null;
+  return {
+    p_description: input.description,
+    p_payer_id: input.payerId,
+    p_split_method: input.split.method,
+    p_split_input: input.split,
+    p_variable: input.variable,
+    p_amount_cents: fixed ? input.amount : null,
+    p_splits: fixed ? toRpcSplits(input.amount!, input.split) : null,
+    p_items: fixed ? (toRpcItems(input.split) ?? null) : null,
+    p_frequency: input.frequency,
+    p_end_date: input.endDate,
+    p_remaining: input.remaining,
+    p_heads_up_days: input.headsUpDays,
+  };
+}
+
+/**
+ * Set up a recurring expense. When it starts today, pass the expense just saved as `firstExpenseId`:
+ * it counts as the first one.
+ */
+export function useCreateRecurring() {
+  return useInvalidating(async (input: RecurringInput & { groupId: string; startDate: string; firstExpenseId?: string }) => {
+    const { data, error } = await callRpc('create_recurring', {
+      p_group_id: input.groupId,
+      ...recurringArgs(input),
+      p_start_date: input.startDate,
+      p_first_expense_id: input.firstExpenseId ?? null,
+    });
+    if (error) throw error;
+    return data as string;
+  });
+}
+
+/** Change what future ones will be; expenses already added stay as they are. */
+export function useUpdateRecurring() {
+  return useInvalidating(async (input: RecurringInput & { id: string }) => {
+    const { error } = await callRpc('update_recurring', { p_id: input.id, ...recurringArgs(input) });
+    if (error) throw error;
+  });
+}
+
+export function useSetRecurringPaused() {
+  return useInvalidating(async (input: { id: string; paused: boolean }) => {
+    const { error } = await callRpc('set_recurring_paused', { p_id: input.id, p_paused: input.paused });
+    if (error) throw error;
+  });
+}
+
+export function useStopRecurring() {
+  return useInvalidating(async (id: string) => {
+    const { error } = await callRpc('stop_recurring', { p_id: id });
+    if (error) throw error;
+  });
+}
+
+/** After the amount for a due bill is saved as an expense: link it and clear the due bill. */
+export async function completeRecurringDue(recurringId: string, expenseId: string) {
+  const { error } = await callRpc('complete_recurring_due', { p_id: recurringId, p_expense_id: expenseId });
+  if (error) throw error;
 }

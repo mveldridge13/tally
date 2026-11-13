@@ -22,7 +22,21 @@ import { GroupIcon, Sheet } from '@/components/friendly';
 import { buzz } from '@/components/fun';
 import { Avatar, Button, Card, Chip, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
-import { useCreateExpense, useNameOf, useTallyData, useUpdateExpense, type Expense } from '@/lib/data';
+import {
+  completeRecurringDue,
+  useCreateExpense,
+  useCreateRecurring,
+  useNameOf,
+  useRecurring,
+  useRecurringDue,
+  useTallyData,
+  useUpdateExpense,
+  useUpdateRecurring,
+  type Expense,
+  type RecurringDue,
+  type RecurringExpense,
+} from '@/lib/data';
+import { defaultRecurring, RecurringLine, RecurringPanel, recurringSummary, todayDate, type RecurringForm } from '@/components/recurring';
 import { useAfterTransition } from '@/lib/transitions';
 import { brand, groupColor, radius, space, type, useColors } from '@/theme';
 
@@ -76,6 +90,38 @@ function currencySymbol(currency: string): string {
 }
 
 /** Form state derived from a saved expense, so editing shows exactly what was entered. */
+/** Form state from a saved split (a recurring expense or a bill that's due): who's in it and how. */
+function initialFromSplit(split: SplitInput, memberIds: string[]) {
+  const included: Record<string, boolean> = {};
+  const values: Record<string, string> = {};
+  const inIt = (id: string) => memberIds.includes(id);
+  if (split.method === 'equal') for (const id of memberIds) included[id] = split.participants.includes(id);
+  if (split.method === 'percentage')
+    for (const id of memberIds) {
+      const sh = split.shares.find((x) => x.userId === id);
+      included[id] = !!sh;
+      if (sh) values[id] = centsToDecimalString(sh.basisPoints).replace(/\.00$/, '');
+    }
+  if (split.method === 'shares')
+    for (const id of memberIds) {
+      const sh = split.shares.find((x) => x.userId === id);
+      included[id] = !!sh;
+      if (sh) values[id] = String(sh.units);
+    }
+  if (split.method === 'items') {
+    for (const id of memberIds) included[id] = (split.participants ?? []).includes(id);
+    return {
+      method: 'items' as FormMethod,
+      included,
+      values,
+      items: split.items.map((i) => ({ key: nextItemKey++, name: i.name, price: centsToDecimalString(i.amount), userIds: i.userIds.filter(inIt) })),
+      rest: (split.rest ?? 'proportional') as ItemsRest,
+    };
+  }
+  const method: FormMethod = split.method === 'percentage' || split.method === 'shares' ? split.method : 'equal';
+  return { method, included, values, items: [newItem()], rest: 'equal' as ItemsRest };
+}
+
 function initialFromExpense(expense: Expense | undefined, memberIds: string[], name: (id: string) => string) {
   const blank = { method: 'equal' as FormMethod, included: {}, values: {}, items: [newItem()], rest: 'equal' as ItemsRest };
   if (!expense) return blank;
@@ -237,14 +283,41 @@ function Tick({ on, onPress, label }: { on: boolean; onPress: () => void; label:
 
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
+/**
+ * New expense, edit an expense, enter the amount for a recurring bill that's due (`dueId`), or edit
+ * a recurring expense (`recurringId`). The last two need their saved split loaded before the form starts.
+ */
 export default function ExpenseFormScreen() {
+  const params = useLocalSearchParams<{ groupId?: string; recurringId?: string; dueId?: string }>();
+  const due = useRecurringDue();
+  const schedules = useRecurring(params.groupId ?? '');
+  const dueBill = params.dueId ? due.data.find((d) => d.id === params.dueId) : undefined;
+  const schedule = params.recurringId ? schedules.data.find((r) => r.id === params.recurringId) : undefined;
+  if ((params.dueId && !dueBill) || (params.recurringId && !schedule)) {
+    const loading = params.dueId ? due.isLoading : schedules.isLoading;
+    return (
+      <HeroScreen nav="close" title={params.recurringId ? 'Edit recurring' : 'New expense'}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <Gutter>
+          <Notice tone="info">{loading ? 'Loading…' : params.dueId ? 'This bill has already been entered.' : 'This recurring expense has stopped.'}</Notice>
+        </Gutter>
+      </HeroScreen>
+    );
+  }
+  return <ExpenseForm schedule={schedule} dueBill={dueBill} />;
+}
+
+function ExpenseForm({ schedule, dueBill }: { schedule?: RecurringExpense; dueBill?: RecurringDue }) {
   const c = useColors();
   const params = useLocalSearchParams<{
     groupId?: string;
     expenseId?: string;
     /** Set by New group when it was opened from this form: switch to the group just made. */
     newGroupId?: string;
+    /** From "New recurring expense": start with Recurring switched on. */
+    recurring?: string;
   }>();
+  const fromSaved = schedule ?? dueBill;
   const myId = useMyId();
   const { data } = useTallyData();
   const name = useNameOf();
@@ -257,7 +330,7 @@ export default function ExpenseFormScreen() {
   const updateExpense = useUpdateExpense();
   const mutation = isEdit ? updateExpense : createExpense;
 
-  const [groupId, setGroupId] = useState(editing?.groupId ?? params.groupId ?? groups[0]?.id ?? '');
+  const [groupId, setGroupId] = useState(editing?.groupId ?? fromSaved?.groupId ?? params.groupId ?? groups[0]?.id ?? '');
   const group = groups.find((g) => g.id === groupId);
   // When editing, also list anyone in the original split who has since left the group.
   const members = useMemo(() => {
@@ -267,11 +340,35 @@ export default function ExpenseFormScreen() {
   }, [group, editing]);
 
   // Only worked out once: a later name change shouldn't rewrite lines being edited.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initial = useMemo(() => initialFromExpense(editing, members, name), [editing, members]);
-  const [description, setDescription] = useState(editing?.description ?? '');
-  const [amountText, setAmountText] = useState(editing ? centsToDecimalString(editing.amount) : '');
-  const [payerId, setPayerId] = useState(editing?.payerId ?? myId);
+  const initial = useMemo(
+    () => (fromSaved ? initialFromSplit(fromSaved.split, members) : initialFromExpense(editing, members, name)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editing, members, fromSaved],
+  );
+  const [description, setDescription] = useState(editing?.description ?? fromSaved?.description ?? '');
+  const [amountText, setAmountText] = useState(
+    editing ? centsToDecimalString(editing.amount) : schedule?.amount ? centsToDecimalString(schedule.amount) : '',
+  );
+  const [payerId, setPayerId] = useState(editing?.payerId ?? fromSaved?.payerId ?? myId);
+  // Recurring: off for a one-off expense; a schedule being edited starts from its own settings.
+  const [recurring, setRecurring] = useState<RecurringForm>(() =>
+    schedule
+      ? {
+          on: true,
+          frequency: schedule.frequency,
+          start: schedule.nextDate,
+          ends: schedule.endDate ? 'date' : schedule.remaining !== null ? 'times' : 'never',
+          endDate: schedule.endDate,
+          times: schedule.remaining ?? 12,
+          variable: schedule.variable,
+          headsUpDays: schedule.headsUpDays,
+        }
+      : { ...defaultRecurring(), on: params.recurring === '1' },
+  );
+  const createRecurring = useCreateRecurring();
+  const updateRecurring = useUpdateRecurring();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [method, setMethod] = useState<FormMethod>(initial.method);
   const [included, setIncluded] = useState<Record<string, boolean>>(initial.included);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
@@ -292,10 +389,10 @@ export default function ExpenseFormScreen() {
     setSeenNewGroup(params.newGroupId);
     pickGroup(params.newGroupId);
   }
-  const [sheet, setSheet] = useState<'split' | 'group' | null>(null);
+  const [sheet, setSheet] = useState<'split' | 'group' | 'recurring' | null>(null);
   // Close the keyboard (and wait until it's gone) before a sheet slides up. Otherwise the keyboard
   // closing tugs the sheet back down mid-slide, which shows as a flicker.
-  const openSheet = async (name: 'split' | 'group') => {
+  const openSheet = async (name: 'split' | 'group' | 'recurring') => {
     if (KeyboardController.isVisible()) await KeyboardController.dismiss();
     setSheet(name);
   };
@@ -398,7 +495,7 @@ export default function ExpenseFormScreen() {
       ? { items: itemsSubtotal(splitInput.items), extra: Number.isFinite(amount) ? amount - itemsSubtotal(splitInput.items) : 0 }
       : null;
 
-  const title = isEdit ? 'Edit expense' : 'New expense';
+  const title = isEdit ? 'Edit expense' : schedule ? 'Edit recurring' : 'New expense';
   if (isEdit && !editing) {
     return (
       <HeroScreen nav="close" title={title}>
@@ -411,16 +508,21 @@ export default function ExpenseFormScreen() {
   }
 
   // Why Save is disabled, in plain language.
+  // A recurring expense whose amount changes needs no amount unless one is being added today.
+  const needsAmount = !(recurring.on && recurring.variable && (!!schedule || recurring.start !== todayDate()));
   const blocker = !group
     ? 'Choose a group'
-    : !amountText
+    : needsAmount && !amountText
       ? 'Enter an amount'
-      : !preview.ok
-        ? (remaining ?? preview.error)
-        : !description.trim()
-          ? 'Add what it was for'
-          : null;
-  const canSave = !blocker && !mutation.isPending;
+      : typeof splitInput === 'string'
+        ? splitInput
+        : needsAmount && !preview.ok
+          ? (remaining ?? preview.error)
+          : !description.trim()
+            ? 'Add what it was for'
+            : null;
+  const busy = saving || mutation.isPending || createRecurring.isPending || updateRecurring.isPending;
+  const canSave = !blocker && !busy;
 
   function save() {
     if (!description.trim()) {
@@ -437,7 +539,7 @@ export default function ExpenseFormScreen() {
       descriptionRef.current?.focus();
       return;
     }
-    if (!group || typeof splitInput === 'string' || !preview.ok) return;
+    if (!group || typeof splitInput === 'string' || (needsAmount && !preview.ok)) return;
     const input = {
       description: description.trim(),
       amount,
@@ -445,8 +547,47 @@ export default function ExpenseFormScreen() {
       split: splitInput,
       occurredAt: editing?.occurredAt ?? new Date().toISOString(),
     };
-    if (editing) updateExpense.mutate({ ...input, expenseId: editing.id }, { onSuccess: () => router.back() });
-    else createExpense.mutate({ ...input, groupId: group.id }, { onSuccess: () => router.back() });
+    if (editing) {
+      updateExpense.mutate({ ...input, expenseId: editing.id }, { onSuccess: () => router.back() });
+      return;
+    }
+    const recurringInput = {
+      description: input.description,
+      payerId,
+      split: splitInput,
+      variable: recurring.variable,
+      amount: needsAmount ? amount : null,
+      frequency: recurring.frequency,
+      endDate: recurring.ends === 'date' ? recurring.endDate : null,
+      remaining: recurring.ends === 'times' ? recurring.times : null,
+      headsUpDays: recurring.headsUpDays,
+    };
+    setSaving(true);
+    setSaveError(null);
+    void (async () => {
+      try {
+        if (schedule) {
+          await updateRecurring.mutateAsync({ ...recurringInput, id: schedule.id });
+        } else if (dueBill) {
+          // The amount for a bill that came due: save it as a normal expense, then mark the bill done.
+          const id = await createExpense.mutateAsync({ ...input, groupId: group.id });
+          await completeRecurringDue(dueBill.id, id);
+        } else if (recurring.on) {
+          // Starting today: today's expense is saved now and counts as the first one.
+          const startsToday = recurring.start === todayDate();
+          const firstId = startsToday ? await createExpense.mutateAsync({ ...input, groupId: group.id }) : undefined;
+          await createRecurring.mutateAsync({ ...recurringInput, groupId: group.id, startDate: recurring.start, firstExpenseId: firstId });
+        } else {
+          await createExpense.mutateAsync({ ...input, groupId: group.id });
+        }
+        buzz.success();
+        router.back();
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : 'Couldn’t save. Please try again.');
+      } finally {
+        setSaving(false);
+      }
+    })();
   }
 
   const payerLabel = payerId === myId ? 'you' : name(payerId);
@@ -624,15 +765,20 @@ export default function ExpenseFormScreen() {
             {splitProblem}. Tap above to fix it.
           </Text>
         ) : null}
+        {!isEdit && !dueBill ? <RecurringLine form={recurring} onPress={() => void openSheet('recurring')} /> : null}
+        {dueBill ? (
+          <Notice tone="info">From your recurring “{dueBill.description}”. Enter this time’s amount; it’s split the same way.</Notice>
+        ) : null}
       </Gutter>
 
       <Gutter>
         {mutation.isError ? <Notice>{mutation.error.message}</Notice> : null}
+        {saveError ? <Notice>{saveError}</Notice> : null}
         <Button
-          label={isEdit ? 'Save changes' : 'Save'}
+          label={isEdit || schedule ? 'Save changes' : recurring.on && recurring.start !== todayDate() ? 'Save recurring' : 'Save'}
           onPress={save}
-          disabled={!canSave && !(onlyDescriptionMissing && !mutation.isPending)}
-          loading={mutation.isPending}
+          disabled={!canSave && !(onlyDescriptionMissing && !busy)}
+          loading={busy}
         />
       </Gutter>
 
@@ -888,6 +1034,26 @@ export default function ExpenseFormScreen() {
             </Pressable>
           ))}
         </View>
+      </Sheet>
+
+      {/* Recurring: how often, when it starts and ends, the heads-up, and whether the amount changes. */}
+      <Sheet
+        visible={sheet === 'recurring'}
+        onClose={() => setSheet(null)}
+        title="Recurring"
+        footer={<Button label="Done" onPress={() => setSheet(null)} />}>
+        <RecurringPanel
+          form={recurring}
+          onChange={setRecurring}
+          editingSchedule={!!schedule}
+          summary={recurringSummary(recurring, {
+            description,
+            amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+            currency: group?.currency ?? 'USD',
+            payer: payerId === myId ? 'you' : name(payerId),
+            splitLine: splitLine.replace(/^Split /, 'split '),
+          })}
+        />
       </Sheet>
     </HeroScreen>
   );

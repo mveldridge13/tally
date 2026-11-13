@@ -13,7 +13,8 @@ import { Bouncy, buzz, CountUp } from '@/components/fun';
 import { Avatar, Card, Notice, Text } from '@/components/ui';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { useMyId } from '@/lib/auth';
-import { useMonthSpending, usePaymentsToConfirm, useTallyData } from '@/lib/data';
+import { useMonthSpending, usePaymentsToConfirm, useRecurringDue, useTallyData } from '@/lib/data';
+import { DueBillCard } from '@/components/recurring';
 import { ConfirmPaymentCard } from '@/components/confirm-payment';
 import { firstName, greeting } from '@/lib/format';
 import { useWidthClass } from '@/lib/layout';
@@ -107,6 +108,7 @@ export default function HomeScreen() {
   const pull = usePullToRefresh(refetch);
   const summaries = useGroupSummaries();
   const { data: toConfirm } = usePaymentsToConfirm();
+  const { data: dueBills } = useRecurringDue();
   const wide = useWidthClass() === 'expanded';
 
   const { primary, others, owedTotal, oweTotal } = usePosition(summaries);
@@ -232,6 +234,15 @@ export default function HomeScreen() {
           <Gutter>
             {toConfirm.map((p) => (
               <ConfirmPaymentCard key={p.id} payment={p} />
+            ))}
+          </Gutter>
+        ) : null}
+
+        {/* Recurring bills whose amount changes, due and waiting for it. */}
+        {dueBills.length > 0 ? (
+          <Gutter>
+            {dueBills.map((b) => (
+              <DueBillCard key={b.id} bill={b} group={data.groups.find((g) => g.id === b.groupId)} />
             ))}
           </Gutter>
         ) : null}

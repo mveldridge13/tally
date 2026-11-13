@@ -8,6 +8,7 @@ import { ContactNameField, type ContactReach } from '@/components/contact-name-f
 import { Gutter, HeaderMenuButton, HeroScreen, SectionTitle } from '@/components/dashboard';
 import { balanceSentence, FloatingButton, GROUP_ICONS, MenuRow, Sheet } from '@/components/friendly';
 import { GroupCard } from '@/components/group-card';
+import { DueBillCard } from '@/components/recurring';
 import { GroupFeed, OweWeb, Segmented } from '@/components/group-visuals';
 import { AllSquareCard, myTransfers, YouCard } from '@/components/you-cards';
 import { SplitPartnerPicker, useSelection } from '@/components/split-partners';
@@ -23,6 +24,7 @@ import {
   useNameOf,
   useRecentlyReminded,
   useRemindToSettle,
+  useRecurringDue,
   useSetGroupIcon,
   useSplitPartners,
   useTallyData,
@@ -67,6 +69,7 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
   const canRemind = seesEverything(data.groups.find((g) => g.id === id)?.myRole);
   const recentlyReminded = useRecentlyReminded(id, canRemind);
   const remind = useRemindToSettle();
+  const { data: dueBills } = useRecurringDue();
   const [justReminded, setJustReminded] = useState<ReadonlySet<string>>(new Set());
 
   if (!summary) {
@@ -210,8 +213,11 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
           </Gutter>
         ) : null}
 
-        {/* You: who you owe and who owes you, each with its action. */}
+        {/* You: who you owe and who owes you, each with its action. Recurring bills waiting for an amount first. */}
         <Gutter>
+          {dueBills.filter((b) => b.groupId === group.id).map((b) => (
+            <DueBillCard key={b.id} bill={b} />
+          ))}
           {mine.length === 0 ? (
             <AllSquareCard
               line={myBalance === 0 ? 'Nobody owes you and you don’t owe anyone here.' : balanceSentence(myBalance, group.currency)}
@@ -448,6 +454,15 @@ export function GroupDetail({ id, embedded = false, onGone }: { id: string; embe
           <MenuRow label="Share an invite link" onPress={() => void invite()} />
           <Divider />
           <MenuRow label="Change icon" onPress={() => setSheet('icon')} />
+          <Divider />
+          <MenuRow
+            label="Recurring"
+            detail="Rent, bills and subscriptions that add themselves"
+            onPress={() => {
+              setSheet(null);
+              router.push({ pathname: '/recurring/[groupId]', params: { groupId: group.id } });
+            }}
+          />
           <Divider />
           <MenuRow
             label="Your balance, person by person"

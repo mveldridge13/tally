@@ -26,6 +26,11 @@ function Row({ n }: { n: AppNotification }) {
 
   function open() {
     if (!inGroup) return;
+    // A recurring bill waiting for its amount: straight to entering it.
+    if ((n.kind === 'recurring_due' || n.kind === 'recurring_due_reminder') && n.recurringId) {
+      router.push({ pathname: '/add-expense', params: { dueId: n.recurringId, groupId: n.group.id } });
+      return;
+    }
     if (reminder) {
       // Straight to Settle up with what you owe now; if you've already settled, the group instead.
       const mine = summaries.find((s) => s.group.id === n.group.id)?.transfers.find((t) => t.fromUserId === myId);
@@ -77,6 +82,24 @@ function Row({ n }: { n: AppNotification }) {
             {bold(n.actorName)} {n.kind === 'confirm_reminder' ? 'is waiting for you to confirm' : 'says they paid you'}{' '}
             {bold(formatMoney(n.amount ?? 0, n.group.currency))} in {bold(n.group.name)}
             {n.settlementStatus === 'pending' ? ' · Did it arrive?' : ''}
+          </Text>
+        ) : n.kind === 'recurring_heads_up' ? (
+          <Text variant="body">
+            {bold(n.recurringDescription ?? 'A recurring expense')}
+            {n.amount ? ` ${formatMoney(n.amount, n.group.currency)}` : ''} is coming up in {bold(n.group.name)}
+          </Text>
+        ) : n.kind === 'recurring_added' ? (
+          <Text variant="body">
+            {bold(n.recurringDescription ?? 'A recurring expense')}
+            {n.amount ? ` ${formatMoney(n.amount, n.group.currency)}` : ''} was added to {bold(n.group.name)}
+          </Text>
+        ) : n.kind === 'recurring_due' ? (
+          <Text variant="body">
+            {bold(n.recurringDescription ?? 'A bill')} in {bold(n.group.name)} is due · Enter this time’s amount
+          </Text>
+        ) : n.kind === 'recurring_due_reminder' ? (
+          <Text variant="body">
+            {bold(n.recurringDescription ?? 'A bill')} in {bold(n.group.name)} still needs this time’s amount
           </Text>
         ) : n.kind === 'payment_confirmed' ? (
           <Text variant="body">
