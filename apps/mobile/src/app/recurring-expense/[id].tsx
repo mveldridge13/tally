@@ -5,16 +5,25 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { formatMoney } from '@tally/shared';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 import { CardText, Gutter, HeroScreen, SectionTitle, SummaryCard } from '@/components/dashboard';
 import { Bouncy, buzz, expenseEmoji } from '@/components/fun';
-import { Bubble, BubbleDays } from '@/components/group-visuals';
 import { FREQUENCY_LABEL, headsUpLabel, recurringDate, shortDate, wash, whenText } from '@/components/recurring';
-import { Button, Notice, Text } from '@/components/ui';
+import { Avatar, Button, Divider, Notice, Text } from '@/components/ui';
 import { useMyId } from '@/lib/auth';
-import { useNameOf, useRecurring, useRecurringHistory, useSetRecurringPaused, useStopRecurring, useTallyData } from '@/lib/data';
-import type { ActivityItem } from '@/store/hooks';
+import {
+  useNameOf,
+  usePeriodPayments,
+  useRecurring,
+  useRecurringHistory,
+  useSetRecurringPaused,
+  useStopRecurring,
+  useTallyData,
+  type Expense,
+  type PeriodPayment,
+} from '@/lib/data';
+
 import { brand, groupColor, radius, space, useColors } from '@/theme';
 
 function ActionPill({ icon, label, onPress, danger, busy }: { icon: 'pause' | 'play-arrow' | 'edit' | 'stop-circle'; label: string; onPress: () => void; danger?: boolean; busy?: boolean }) {
@@ -44,6 +53,96 @@ function ActionPill({ icon, label, onPress, danger, busy }: { icon: 'pause' | 'p
   );
 }
 
+/**
+ * One period of a recurring expense (e.g. Rent · 17 Nov): what it came to, who paid, and a line per
+ * person with their share and where it's up to: Settle, Waiting to confirm, or Settled.
+ */
+function PeriodCard({ expense, payments, currency }: { expense: Expense; payments: PeriodPayment[]; currency: string }) {
+  const c = useColors();
+  const myId = useMyId();
+  const name = useNameOf();
+  const money = (v: number) => formatMoney(v, currency);
+  const when = new Date(expense.occurredAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const period = `${expense.description} · ${when}`;
+  const payer = expense.payerId;
+  const owing = expense.splits.filter((s) => s.userId !== payer && s.amount > 0);
+
+  const settle = (from: string, amount: number) =>
+    router.push({
+      pathname: '/settle',
+      params: { groupId: expense.groupId, from, to: payer, amount: String(amount), expenseId: expense.id, period },
+    });
+
+  return (
+    <View style={{ borderRadius: radius.lg, backgroundColor: c.surface, borderWidth: 1, borderColor: c.border, overflow: 'hidden' }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${period}, ${money(expense.amount)}. Open the expense`}
+        onPress={() => router.push({ pathname: '/expense/[id]', params: { id: expense.id } })}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md + 2, backgroundColor: c.surfaceAlt }}>
+        <Text style={{ fontSize: 24 }}>{expenseEmoji(expense.description)}</Text>
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text variant="heading">{when}</Text>
+          <Text variant="caption" muted>
+            {payer === myId ? 'You' : name(payer)} paid {money(expense.amount)}
+          </Text>
+        </View>
+        <Text muted style={{ fontSize: 20 }}>
+          ›
+        </Text>
+      </Pressable>
+      {owing.length === 0 ? (
+        <Text muted style={{ padding: space.md + 2 }}>
+          Nobody else is in this one.
+        </Text>
+      ) : (
+        owing.map((s, i) => {
+          const mine = payments.filter((p) => p.expenseId === expense.id && p.fromUserId === s.userId && p.toUserId === payer);
+          const paid = mine.filter((p) => p.status === 'recorded').reduce((t, p) => t + p.amount, 0);
+          const sent = mine.filter((p) => p.status === 'pending').reduce((t, p) => t + p.amount, 0);
+          const left = s.amount - paid - sent;
+          const isMe = s.userId === myId;
+          const who = isMe ? 'You' : name(s.userId);
+          let status: string | null = null;
+          let action: { label: string; onPress: () => void } | null = null;
+          if (paid >= s.amount) status = 'Settled ✓';
+          else if (left <= 0) status = payer === myId ? 'Sent · confirm it on Home' : `Waiting for ${name(payer)} to confirm`;
+          else if (isMe) action = { label: 'Settle', onPress: () => settle(myId, left) };
+          else if (payer === myId) action = { label: 'Mark paid', onPress: () => settle(s.userId, left) };
+          else status = `Owes ${money(left)}`;
+          return (
+            <View key={s.userId}>
+              {i > 0 ? <Divider /> : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.md + 2, paddingVertical: space.sm + 2 }}>
+                <Avatar name={name(s.userId)} size={32} color={groupColor(s.userId)} />
+                <View style={{ flex: 1, gap: 1 }}>
+                  <Text variant="label" numberOfLines={1}>
+                    {who} · {money(s.amount)}
+                  </Text>
+                  {status ? (
+                    <Text variant="caption" muted numberOfLines={1}>
+                      {status}
+                    </Text>
+                  ) : paid + sent > 0 ? (
+                    <Text variant="caption" muted>
+                      {money(left)} left
+                    </Text>
+                  ) : null}
+                </View>
+                {action ? (
+                  <View style={{ minWidth: 112 }}>
+                    <Button size="small" label={action.label} onPress={action.onPress} />
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
 export default function RecurringExpenseScreen() {
   const c = useColors();
   const myId = useMyId();
@@ -56,6 +155,7 @@ export default function RecurringExpenseScreen() {
   const pause = useSetRecurringPaused();
   const stop = useStopRecurring();
   const group = data.groups.find((g) => g.id === groupId);
+  const payments = usePeriodPayments(history.map((e) => e.id));
 
   if (!r || !group) {
     return (
@@ -89,17 +189,7 @@ export default function RecurringExpenseScreen() {
       },
     ]);
 
-  const bubbles: ActivityItem[] = history.map((e) => ({
-    kind: 'expense',
-    id: e.id,
-    groupId: e.groupId,
-    at: e.occurredAt,
-    title: e.description,
-    amount: e.amount,
-    actorId: e.payerId,
-    myEffect: 0,
-    involved: true,
-  }));
+
 
   return (
     <HeroScreen nav="back" title={r.description} hideTitle>
@@ -219,16 +309,16 @@ export default function RecurringExpenseScreen() {
       </View>
 
       <View style={{ gap: space.md }}>
-        <SectionTitle title="Added so far" />
+        <SectionTitle title="Each period" />
         <Gutter>
-          {bubbles.length === 0 ? (
+          {history.length === 0 ? (
             <Text muted>Nothing added yet. The first one is on {shortDate(r.nextDate)}.</Text>
           ) : (
-            <BubbleDays items={bubbles} render={(item) => <Bubble key={item.id} item={item} currency={group.currency} />} />
+            history.map((e) => <PeriodCard key={e.id} expense={e} payments={payments} currency={group.currency} />)
           )}
-          {bubbles.length ? (
+          {history.length ? (
             <Text variant="caption" muted>
-              Each one is a normal expense: tap it to edit or delete just that one.
+              Settle pays one person’s share of that period. It counts towards the group balance like any payment.
             </Text>
           ) : null}
         </Gutter>

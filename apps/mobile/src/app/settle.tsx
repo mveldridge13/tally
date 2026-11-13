@@ -48,6 +48,9 @@ export default function SettleScreen() {
     amount?: string;
     /** Set to correct an existing payment instead of recording a new one. */
     paymentId?: string;
+    /** Settling one period of a recurring expense: that expense, and how it's described ("Rent · 17 Nov"). */
+    expenseId?: string;
+    period?: string;
   }>();
   const { data } = useTallyData();
   const recordSettlement = useRecordSettlement();
@@ -66,7 +69,7 @@ export default function SettleScreen() {
 
   const suggested = isEdit ? 0 : Number(params.amount) || 0;
   const [text, setText] = useState(editing ? centsToDecimalString(editing.amount) : suggested ? centsToDecimalString(suggested) : '');
-  const [note, setNote] = useState(editing?.note ?? '');
+  const [note, setNote] = useState(editing?.note ?? params.period ?? '');
   // The full amount is filled in; other amounts and a note are one tap away.
   const [changing, setChanging] = useState(isEdit || !suggested);
   const [noting, setNoting] = useState(!!editing?.note);
@@ -129,7 +132,7 @@ export default function SettleScreen() {
       );
     } else {
       recordSettlement.mutate(
-        { groupId: group.id, fromUserId: from, toUserId: to, amount: cents, note },
+        { groupId: group.id, fromUserId: from, toUserId: to, amount: cents, note, expenseId: params.expenseId },
         {
           onSuccess: () => {
             buzz.success();
@@ -216,7 +219,10 @@ export default function SettleScreen() {
   }
 
   return (
-    <HeroScreen nav="close" eyebrow={`${group.icon ? `${group.icon} ` : ''}${group.name}`} title={title}>
+    <HeroScreen
+      nav="close"
+      eyebrow={`${group.icon ? `${group.icon} ` : ''}${group.name}${params.period ? ` · ${params.period}` : ''}`}
+      title={title}>
       <Stack.Screen options={{ headerShown: false }} />
 
       <Gutter>

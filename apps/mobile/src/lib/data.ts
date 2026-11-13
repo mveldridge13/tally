@@ -482,17 +482,21 @@ export function useExpenseHistory(expenseId: string) {
 }
 
 export function useRecordSettlement() {
-  return useInvalidating(async (input: { groupId: string; fromUserId: string; toUserId: string; amount: Cents; note?: string }) => {
-    const { data, error } = await supabase.rpc('record_settlement', {
+  return useInvalidating(
+    async (input: { groupId: string; fromUserId: string; toUserId: string; amount: Cents; note?: string; expenseId?: string }) => {
+    const { data, error } = await callRpc('record_settlement', {
       p_group_id: input.groupId,
       p_from_user_id: input.fromUserId,
       p_to_user_id: input.toUserId,
       p_amount_cents: input.amount,
       p_note: input.note?.trim() || undefined,
+      // Only sent when settling one period of a recurring expense.
+      ...(input.expenseId ? { p_expense_id: input.expenseId } : {}),
     });
     if (error) throw error;
-    return data;
-  });
+    return data as string;
+    },
+  );
 }
 
 /** Owner only. Archives the group for every member; the database enforces the owner check. */
@@ -1058,4 +1062,41 @@ export function useStopRecurring() {
 export async function completeRecurringDue(recurringId: string, expenseId: string) {
   const { error } = await callRpc('complete_recurring_due', { p_id: recurringId, p_expense_id: expenseId });
   if (error) throw error;
+}
+
+
+/** A payment for one period of a recurring expense (only ones you're allowed to see). */
+export interface PeriodPayment {
+  expenseId: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: Cents;
+  status: 'recorded' | 'pending';
+}
+
+/** Payments made for these expenses (periods of a recurring expense): settled or waiting to be confirmed. */
+export function usePeriodPayments(expenseIds: string[]) {
+  const key = [...expenseIds].sort().join(',');
+  const query = useQuery({
+    queryKey: [...TALLY_KEY, 'period-payments', key],
+    enabled: expenseIds.length > 0,
+    queryFn: async (): Promise<PeriodPayment[]> => {
+      const { data, error } = await supabase
+        .from('settlements')
+        .select('expense_id, from_user_id, to_user_id, amount_cents, status')
+        .in('expense_id' as never, expenseIds as never)
+        .in('status', ['recorded', 'pending']);
+      if (error) throw error;
+      return ((data ?? []) as unknown as { expense_id: string; from_user_id: string; to_user_id: string; amount_cents: number; status: string }[]).map(
+        (p) => ({
+          expenseId: p.expense_id,
+          fromUserId: p.from_user_id,
+          toUserId: p.to_user_id,
+          amount: p.amount_cents,
+          status: p.status === 'pending' ? 'pending' : 'recorded',
+        }),
+      );
+    },
+  });
+  return query.data ?? [];
 }

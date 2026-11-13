@@ -169,6 +169,29 @@ describe('Recurring expenses (Supabase)', () => {
     expect(same?.next_date).toBe(plusDays(10));
   });
 
+  it('a payment can be for one period of a recurring expense', async () => {
+    const { data: id } = await create(bob, { p_description: 'Power' });
+    await runJob();
+    const { data: added } = await alice.client.from('expenses').select('id').eq('recurring_id', id).single();
+    // Cara settles her share of this period with Bob.
+    const { data: pay, error } = await cara.client.rpc('record_settlement', {
+      p_group_id: groupId, p_from_user_id: cara.id, p_to_user_id: bob.id, p_amount_cents: 30000, p_expense_id: added!.id,
+    });
+    expect(error).toBeNull();
+    const { data: row } = await cara.client.from('settlements').select('expense_id, status').eq('id', pay).single();
+    expect(row).toMatchObject({ expense_id: added!.id, status: 'pending' });
+    // A correction keeps the link.
+    await bob.client.rpc('respond_to_payment', { p_settlement_id: pay, p_received: true });
+    const { data: fixed } = await cara.client.rpc('correct_settlement', { p_settlement_id: pay, p_amount_cents: 30000, p_note: 'Power, Nov' });
+    const { data: kept } = await alice.client.from('settlements').select('expense_id').eq('id', fixed).single();
+    expect(kept?.expense_id).toBe(added!.id);
+    // It has to be an expense in this group.
+    const other = await cara.client.rpc('record_settlement', {
+      p_group_id: groupId, p_from_user_id: cara.id, p_to_user_id: bob.id, p_amount_cents: 100, p_expense_id: '00000000-0000-0000-0000-000000000000',
+    });
+    expect(other.error?.message).toMatch(/isn.t in this group/);
+  });
+
   it('ends after the number of times chosen', async () => {
     const { data: id } = await create(bob, { p_description: 'Course', p_remaining: 1 });
     await runJob();
