@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join on sic</title>
+<meta name="robots" content="noindex">
+<script>
+  // Invite links sent before the rename point here (/tally/invite/). Send them on to the
+  // sic invite page, keeping the ?code=… so the invite still works.
+  location.replace('https://mveldridge13.github.io/sic/invite/' + location.search + location.hash);
+</script>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 32px 16px; background: #605574; color: #FAF0EB; font: 16px/1.5 system-ui, sans-serif; text-align: center; }
+  a { color: #FAF0EB; }
+</style>
+</head>
+<body>
+  <p>Taking you to your invite… <a id="go" href="https://mveldridge13.github.io/sic/invite/">Tap here</a> if nothing happens.</p>
+  <script>document.getElementById('go').href += location.search + location.hash;</script>
+</body>
+</html>
